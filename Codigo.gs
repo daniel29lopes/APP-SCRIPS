@@ -23,15 +23,30 @@ function getInitialData() {
     if (!sheet) return [];
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return []; // Empty or only headers
+
     const headers = data[0];
-    return data.slice(1).map((row, idx) => {
+    const sanitizedData = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      // Skip ghost rows (completely empty lines)
+      if (row.join('').trim() === '') continue;
+
       let obj = {};
       headers.forEach((header, index) => {
-        obj[header] = row[index];
+        const val = row[index];
+        // Sanitize Dates to prevent serialization errors over google.script.run
+        if (val instanceof Date) {
+          obj[header] = val.toISOString();
+        } else {
+          obj[header] = val;
+        }
       });
-      obj['_rowIndex'] = idx + 2; // +1 for 0-index, +1 for headers
-      return obj;
-    });
+      obj['_rowIndex'] = i + 1; // +1 for 0-index
+      sanitizedData.push(obj);
+    }
+
+    return sanitizedData;
   };
 
   return {

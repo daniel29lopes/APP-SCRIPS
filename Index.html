@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRACK-FAB ERP</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0ea5e9',
+                        secondary: '#1e293b',
+                        accent: '#f59e0b',
+                        danger: '#ef4444',
+                        success: '#10b981',
+                        dark: '#0f172a',
+                        surface: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; overflow: hidden; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .glass-panel { background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Animations */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+        .slide-enter-active, .slide-leave-active { transition: all 0.3s ease; }
+        .slide-enter-from, .slide-leave-to { transform: translateX(-20px); opacity: 0; }
+
+        .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }
+
+        /* Loader */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #0ea5e9;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+<div id="app" v-cloak class="h-full w-full flex overflow-hidden">
+
+    <!-- INITIAL LOADING -->
+    <div v-if="loading.initial" class="absolute inset-0 z-50 bg-dark flex flex-col items-center justify-center">
+        <div class="loader mb-4"></div>
+        <h2 class="text-2xl font-bold tracking-widest text-primary">TRACK-FAB</h2>
+        <p class="text-slate-400 mt-2">{{ loading.message || 'A carregar sistemas...' }}</p>
+        <p v-if="loading.error" class="text-danger mt-4 font-semibold">{{ loading.error }}</p>
+    </div>
+
+    <!-- OFFLINE WARNING -->
+    <div v-if="!isOnline" class="absolute top-0 left-0 w-full bg-danger text-white text-center py-1 z-50 text-sm font-semibold shadow-lg">
+        <i data-lucide="wifi-off" class="inline w-4 h-4 mr-1"></i> Sem ligação à rede. Funcionalidades de gravação desativadas.
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        <transition-group name="fade">
+            <div v-for="toast in toasts" :key="toast.id"
+                 class="px-4 py-3 rounded shadow-lg pointer-events-auto flex items-center gap-3 transform transition-all glass"
+                 :class="{'border-l-4 border-success': toast.type==='success', 'border-l-4 border-danger': toast.type==='error', 'border-l-4 border-primary': toast.type==='info'}">
+                <i :data-lucide="toast.type === 'success' ? 'check-circle' : toast.type === 'error' ? 'alert-triangle' : 'info'"
+                   :class="{'text-success': toast.type==='success', 'text-danger': toast.type==='error', 'text-primary': toast.type==='info'}"></i>
+                <span class="text-sm font-medium">{{ toast.message }}</span>
+            </div>
+        </transition-group>
+    </div>
+
+    <!-- CONFIRMATION MODAL -->
+    <div v-if="modal.show" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="glass-panel rounded-xl p-6 max-w-md w-full shadow-2xl border border-slate-700 m-4">
+            <div class="flex items-center gap-3 mb-4 text-danger">
+                <i data-lucide="alert-octagon" class="w-8 h-8"></i>
+                <h3 class="text-xl font-bold">{{ modal.title }}</h3>
+            </div>
+            <p class="text-slate-300 mb-6">{{ modal.message }}</p>
+            <div class="flex justify-end gap-3">
+                <button @click="modal.show = false; modal.reject()" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition text-white text-sm font-medium">Cancelar</button>
+                <button @click="modal.show = false; modal.resolve()" class="px-4 py-2 rounded bg-danger hover:bg-red-600 transition text-white text-sm font-medium shadow-lg shadow-red-500/20">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside :class="['bg-surface border-r border-slate-800 transition-all duration-300 flex flex-col z-40 relative shadow-xl', sidebarOpen ? 'w-64' : 'w-16']" v-show="activeModule !== 'KIOSK'">
+        <div class="h-16 flex items-center justify-between px-4 border-b border-slate-800">
+            <span v-if="sidebarOpen" class="font-black text-xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">TRACK-FAB</span>
+            <button @click="sidebarOpen = !sidebarOpen" class="text-slate-400 hover:text-white transition focus:outline-none p-1 rounded hover:bg-slate-800">
+                <i data-lucide="menu" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <nav class="flex-1 py-4 flex flex-col gap-2 px-2">
+            <button @click="changeModule('DASHBOARD')" :class="['flex items-center gap-3 p-3 rounded-lg transition-colors group', activeModule === 'DASHBOARD' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200']" :title="!sidebarOpen ? 'Dashboard' : ''">
+                <i data-lucide="layout-dashboard" class="w-5 h-5 flex-shrink-0"></i>
+                <span v-if="sidebarOpen" class="font-medium whitespace-nowrap text-sm">Dashboard & Matriz</span>
+            </button>
+            <button @click="changeModule('SPOOLING')" :class="['flex items-center gap-3 p-3 rounded-lg transition-colors group', activeModule === 'SPOOLING' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200']" :title="!sidebarOpen ? 'Spooling' : ''">
+                <i data-lucide="split-square-horizontal" class="w-5 h-5 flex-shrink-0"></i>
+                <span v-if="sidebarOpen" class="font-medium whitespace-nowrap text-sm">Spooling (MTO)</span>
+            </button>
+            <button @click="changeModule('LOGISTICS')" :class="['flex items-center gap-3 p-3 rounded-lg transition-colors group', activeModule === 'LOGISTICS' ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200']" :title="!sidebarOpen ? 'Logística' : ''">
+                <i data-lucide="package" class="w-5 h-5 flex-shrink-0"></i>
+                <span v-if="sidebarOpen" class="font-medium whitespace-nowrap text-sm">Logística & Stock</span>
+            </button>
+        </nav>
+        <div class="p-4 border-t border-slate-800">
+            <button @click="changeModule('KIOSK')" class="w-full flex items-center justify-center gap-2 p-2 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition" :title="!sidebarOpen ? 'Modo Kiosk' : ''">
+                <i data-lucide="monitor-smartphone" class="w-4 h-4"></i>
+                <span v-if="sidebarOpen" class="text-xs font-semibold uppercase tracking-wider">Modo Kiosk</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden bg-[#0b1120] relative">
+
+        <!-- LOADING OVERLAY -->
+        <div v-if="loading.action" class="absolute inset-0 bg-dark/50 backdrop-blur-sm z-30 flex items-center justify-center">
+            <div class="loader"></div>
+        </div>
+
+        <!-- MÓDULO C: DASHBOARD & MATRIZ -->
+        <div v-if="activeModule === 'DASHBOARD'" class="h-full flex flex-col fade-enter-active">
+            <!-- Header Dashboard S-Curve / Financeiro -->
+            <header class="h-24 glass border-b border-slate-800 flex items-center px-6 gap-6 shrink-0">
+                <div class="flex-1">
+                    <h1 class="text-xl font-bold text-white mb-1">Matriz de Produção</h1>
+                    <div class="text-xs text-slate-400 flex items-center gap-4">
+                        <span><i data-lucide="activity" class="inline w-3 h-3 mr-1"></i>Total Spools: {{ filteredSpools.length }}</span>
+                        <span><i data-lucide="check-circle" class="inline w-3 h-3 mr-1 text-success"></i>Concluídos: {{ spoolsByStatus['CONCLUIDO'] || 0 }}</span>
+                    </div>
+                </div>
+
+                <!-- Cards Financeiros (DB_5 Simulados) -->
+                <div class="flex gap-4">
+                    <div class="bg-surface border border-slate-700 rounded-lg p-3 w-48 shadow-lg">
+                        <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Avanço Global</p>
+                        <div class="flex items-end gap-2">
+                            <span class="text-2xl font-bold text-primary">{{ globalProgress }}%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-1 mt-2 rounded-full overflow-hidden">
+                            <div class="bg-primary h-full" :style="{ width: globalProgress + '%' }"></div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Filters -->
+            <div class="p-4 border-b border-slate-800 flex items-center gap-4 bg-surface/50 shrink-0">
+                <div class="relative flex-1 max-w-xs">
+                    <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-slate-400"></i>
+                    <input type="text" v-model="filters.spool.search" placeholder="Pesquisar Spool ou ISO..." class="w-full bg-slate-900 border border-slate-700 rounded pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
+                </div>
+                <select v-model="filters.spool.area" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                    <option value="">Todas as Áreas</option>
+                    <option v-for="area in uniqueAreas" :value="area">{{ area }}</option>
+                </select>
+                <select v-model="filters.spool.status" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                    <option value="">Todos os Estados</option>
+                    <option v-for="status in statusList" :value="status">{{ status }}</option>
+                </select>
+
+                <div class="ml-auto flex gap-2">
+                    <select v-if="selectedSpools.length > 0" v-model="bulkStatusAction" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-primary focus:outline-none focus:border-primary">
+                        <option value="" disabled>Alterar Estado...</option>
+                        <option v-for="status in statusList" :value="status">{{ status }}</option>
+                    </select>
+                    <button v-if="selectedSpools.length > 0 && bulkStatusAction" @click="applyBulkStatus" class="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded text-sm font-medium transition shadow-lg shadow-primary/20" :disabled="!isOnline">
+                        Aplicar a {{ selectedSpools.length }}
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="flex-1 overflow-auto p-4 custom-scrollbar">
+                <div class="bg-surface border border-slate-800 rounded-lg overflow-hidden shadow-xl">
+                    <table class="w-full text-left text-sm whitespace-nowrap">
+                        <thead class="bg-slate-800/50 text-slate-300 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
+                            <tr>
+                                <th class="p-3 w-10 text-center border-b border-slate-700">
+                                    <input type="checkbox" @change="toggleAllSpools" :checked="selectedSpools.length === filteredSpools.length && filteredSpools.length > 0" class="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary">
+                                </th>
+                                <th class="p-3 border-b border-slate-700 font-semibold">Spool</th>
+                                <th class="p-3 border-b border-slate-700 font-semibold">ISO</th>
+                                <th class="p-3 border-b border-slate-700 font-semibold">Área / Sist.</th>
+                                <th class="p-3 border-b border-slate-700 font-semibold">Estado</th>
+                                <th class="p-3 border-b border-slate-700 font-semibold text-right">Diam. Máx</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-slate-300">
+                            <tr v-for="spool in filteredSpools" :key="spool.Tag_Spool" class="hover:bg-slate-800/50 transition-colors">
+                                <td class="p-3 text-center">
+                                    <input type="checkbox" :value="spool.Tag_Spool" v-model="selectedSpools" class="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary">
+                                </td>
+                                <td class="p-3 font-medium text-white">{{ spool.Tag_Spool }}</td>
+                                <td class="p-3 text-slate-400">{{ spool.Tag_ISO }} <span class="text-xs bg-slate-700 px-1 rounded ml-1">R{{ spool.Rev_ISO }}</span></td>
+                                <td class="p-3">{{ spool.Area }} <span class="text-slate-500">/</span> {{ spool.Sistema }}</td>
+                                <td class="p-3">
+                                    <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico || 'N/A' }}</span>
+                                </td>
+                                <td class="p-3 text-right text-slate-400">{{ spool.Diametro_Max }}</td>
+                            </tr>
+                            <tr v-if="filteredSpools.length === 0">
+                                <td colspan="6" class="p-8 text-center text-slate-500">Nenhum spool encontrado.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- MÓDULO A: SPOOLING (SPLIT SCREEN) -->
+        <div v-if="activeModule === 'SPOOLING'" class="h-full flex flex-col fade-enter-active">
+            <header class="h-16 border-b border-slate-800 flex items-center px-4 shrink-0 bg-surface justify-between">
+                <div class="flex items-center gap-4">
+                    <i data-lucide="split-square-horizontal" class="w-5 h-5 text-primary"></i>
+                    <h1 class="text-lg font-bold">Engenharia de Produção</h1>
+                </div>
+                <div class="w-64">
+                    <select v-model="selectedIsoForSpooling" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary shadow-sm">
+                        <option value="">Selecione uma Isométrica...</option>
+                        <option v-for="iso in uniqueIsos" :value="iso">{{ iso }}</option>
+                    </select>
+                </div>
+            </header>
+
+            <div v-if="!selectedIsoForSpooling" class="flex-1 flex flex-col items-center justify-center text-slate-500">
+                <i data-lucide="git-branch" class="w-16 h-16 mb-4 opacity-50"></i>
+                <p>Selecione uma Isométrica no topo para começar.</p>
+            </div>
+
+            <div v-else class="flex-1 flex overflow-hidden">
+                <!-- Left: MTO (BOM) -->
+                <div class="w-1/2 border-r border-slate-800 flex flex-col bg-surface/30">
+                    <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center">
+                        <span>Material Take-Off (MTO)</span>
+                        <span class="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">ISO: {{ selectedIsoForSpooling }}</span>
+                    </div>
+                    <div class="flex-1 overflow-auto p-4 custom-scrollbar">
+                        <div v-if="revisionAlerts.length > 0" class="mb-4 space-y-2">
+                             <div v-for="alert in revisionAlerts" class="bg-accent/10 border border-accent/30 text-accent text-xs p-2 rounded flex items-center">
+                                 <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i> {{ alert }}
+                             </div>
+                        </div>
+                        <div class="flex flex-col gap-3">
+                            <div v-for="item in mtoForSelectedIso" :key="item.Item_No" class="bg-slate-800 border border-slate-700 rounded-lg p-3 hover-lift shadow-sm">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div class="flex gap-2 items-center">
+                                        <span class="bg-primary/20 text-primary text-xs font-bold px-2 py-0.5 rounded">Item {{ item.Item_No }}</span>
+                                        <span class="text-sm font-medium text-white">{{ item.Descricao_Material }}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xs text-slate-400">Desenhado: <span class="text-slate-200">{{ item.Qtd_Desenhada }} {{ item.Unidade }}</span></div>
+                                        <div class="text-xs mt-0.5" :class="getBalançoMto(item) > 0 ? 'text-success' : 'text-danger'">Disponível: <span class="font-bold">{{ getBalançoMto(item) }}</span> {{ item.Unidade }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-slate-400 mb-3 flex gap-4">
+                                    <span>SAP: {{ item.Codigo_SAP }}</span>
+                                    <span>Diam: {{ item.Diametro_in }}"</span>
+                                </div>
+
+                                <!-- Allocation Form -->
+                                <div class="mt-2 pt-3 border-t border-slate-700 flex gap-2 items-end" v-if="getBalançoMto(item) > 0">
+                                    <div class="flex-1">
+                                        <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Para Spool</label>
+                                        <select v-model="allocationForm[item.Item_No].spool" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary">
+                                            <option value="">Selecione...</option>
+                                            <option v-for="spool in spoolsForSelectedIso" :value="spool.Tag_Spool">{{ spool.Tag_Spool }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="w-20">
+                                        <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Qtd</label>
+                                        <input type="number" step="0.01" v-model.number="allocationForm[item.Item_No].qty" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary" @input="enforceNumber(item.Item_No, getBalançoMto(item))">
+                                    </div>
+                                    <div class="w-24">
+                                        <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Destino</label>
+                                        <select v-model="allocationForm[item.Item_No].dest" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary">
+                                            <option value="SHOP">SHOP</option>
+                                            <option value="FIELD">FIELD</option>
+                                        </select>
+                                    </div>
+                                    <button @click="processAllocation(item)" class="bg-primary hover:bg-blue-600 text-white rounded p-1.5 transition disabled:opacity-50" :disabled="!allocationForm[item.Item_No].spool || !allocationForm[item.Item_No].qty || allocationForm[item.Item_No].qty <= 0 || !isOnline" title="Alocar">
+                                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Spools & Joints -->
+                <div class="w-1/2 flex flex-col bg-surface/10">
+                    <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center">
+                        <span>Spools & Juntas</span>
+                    </div>
+                    <div class="flex-1 overflow-auto p-4 custom-scrollbar">
+                        <div class="grid grid-cols-1 gap-4">
+                            <div v-for="spool in spoolsForSelectedIso" :key="spool.Tag_Spool" class="bg-surface border border-slate-700 rounded-xl overflow-hidden shadow-lg">
+                                <!-- Spool Header -->
+                                <div class="bg-slate-800/80 px-4 py-3 flex justify-between items-center border-b border-slate-700">
+                                    <div>
+                                        <h3 class="font-bold text-white text-lg">{{ spool.Tag_Spool }}</h3>
+                                        <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico }}</span>
+                                    </div>
+                                    <div v-if="isSpoolFrozen(spool.Estado_Fabrico)" class="text-xs flex items-center text-accent bg-accent/10 px-2 py-1 rounded border border-accent/20">
+                                        <i data-lucide="lock" class="w-3 h-3 mr-1"></i> Freeze Mode
+                                    </div>
+                                </div>
+
+                                <div class="p-4">
+                                    <!-- Missing Stock Alert -->
+                                    <div v-if="getMissingStockForSpool(spool.Tag_Spool).length > 0" class="mb-4 bg-danger/10 border border-danger/30 rounded p-2 text-xs">
+                                        <div class="text-danger font-semibold flex items-center mb-1"><i data-lucide="alert-triangle" class="w-3 h-3 mr-1"></i> Falta de Stock Real:</div>
+                                        <ul class="text-slate-300 list-disc list-inside">
+                                            <li v-for="miss in getMissingStockForSpool(spool.Tag_Spool)">{{ miss.SAP }} (Faltam {{ miss.falta }})</li>
+                                        </ul>
+                                    </div>
+
+                                    <!-- Allocated Materials -->
+                                    <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Materiais Alocados</h4>
+                                    <div class="space-y-1 mb-4">
+                                        <div v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" class="flex justify-between items-center text-sm bg-slate-900/50 p-2 rounded border border-slate-800">
+                                            <span class="text-slate-300"><span class="text-slate-500">#{{ mat.Item_No }}</span> {{ mat.Descricao_Material }}</span>
+                                            <div class="flex items-center gap-3">
+                                                <span class="text-xs px-1.5 py-0.5 rounded" :class="mat.Destino === 'SHOP' ? 'bg-blue-900/50 text-blue-300' : 'bg-emerald-900/50 text-emerald-300'">{{ mat.Destino }}</span>
+                                                <span class="font-medium">{{ mat.Qtd_Alocada }} {{ mat.Unidade }}</span>
+                                            </div>
+                                        </div>
+                                        <div v-if="getAllocatedMaterials(spool.Tag_Spool).length === 0" class="text-slate-500 text-xs italic">Nenhum material alocado.</div>
+                                    </div>
+
+                                    <!-- Joints -->
+                                    <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Mapeamento de Juntas</h4>
+                                    <div class="space-y-2 mb-3">
+                                        <div v-for="joint in getJointsForSpool(spool.Tag_Spool)" class="flex items-center gap-3 text-xs bg-slate-800 p-2 rounded border border-slate-700">
+                                            <span class="font-bold text-white w-12">{{ joint.ID_Junta }}</span>
+                                            <span class="text-slate-400">Comp A: <span class="text-slate-200">{{ joint.Componente_A }}</span></span>
+                                            <i data-lucide="link" class="w-3 h-3 text-slate-500"></i>
+                                            <span class="text-slate-400">Comp B: <span class="text-slate-200">{{ joint.Componente_B }}</span></span>
+                                            <span class="ml-auto" :class="joint.Data_Soldadura ? 'text-success' : 'text-slate-500'">{{ joint.Data_Soldadura ? 'Soldada' : 'Pendente' }}</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Create Joint Form -->
+                                    <div v-if="!isSpoolFrozen(spool.Estado_Fabrico) && getAllocatedMaterials(spool.Tag_Spool).length >= 2" class="mt-3 pt-3 border-t border-slate-700">
+                                        <div class="flex flex-col gap-2">
+                                            <div class="flex gap-2 items-end">
+                                                <div class="w-16">
+                                                    <input type="text" v-model="jointForm[spool.Tag_Spool].id" placeholder="ID Junta" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
+                                                </div>
+                                                <div class="flex-1">
+                                                    <select v-model="jointForm[spool.Tag_Spool].compA" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
+                                                        <option value="">Comp. A</option>
+                                                        <option v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" :value="mat.Item_No">Item {{ mat.Item_No }}</option>
+                                                    </select>
+                                                </div>
+                                                <div class="flex-1">
+                                                    <select v-model="jointForm[spool.Tag_Spool].compB" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
+                                                        <option value="">Comp. B</option>
+                                                        <option v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" :value="mat.Item_No">Item {{ mat.Item_No }}</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="flex gap-2 items-end">
+                                                <div class="flex-1">
+                                                    <select v-model="jointForm[spool.Tag_Spool].heatA" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
+                                                        <option value="">Corrida A</option>
+                                                        <option v-for="heat in getHeatNumbersForSpool(spool.Tag_Spool)" :value="heat">{{ heat }}</option>
+                                                    </select>
+                                                </div>
+                                                <div class="flex-1">
+                                                    <select v-model="jointForm[spool.Tag_Spool].heatB" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
+                                                        <option value="">Corrida B</option>
+                                                        <option v-for="heat in getHeatNumbersForSpool(spool.Tag_Spool)" :value="heat">{{ heat }}</option>
+                                                    </select>
+                                                </div>
+                                                <button @click="processCreateJoint(spool)" class="bg-secondary hover:bg-slate-700 text-white rounded p-1.5 transition border border-slate-600 disabled:opacity-50" :disabled="!jointForm[spool.Tag_Spool].id || !jointForm[spool.Tag_Spool].compA || !jointForm[spool.Tag_Spool].compB || !isOnline" title="Criar Junta">
+                                                    <i data-lucide="plus" class="w-4 h-4"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MÓDULO B: LOGÍSTICA -->
+        <div v-if="activeModule === 'LOGISTICS'" class="h-full flex flex-col fade-enter-active">
+            <header class="h-16 border-b border-slate-800 flex items-center px-6 shrink-0 bg-surface">
+                <i data-lucide="package" class="w-5 h-5 text-primary mr-3"></i>
+                <h1 class="text-lg font-bold">Logística & Ledger de Stock</h1>
+            </header>
+
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Stock Ledger Table -->
+                <div class="w-2/3 border-r border-slate-800 flex flex-col">
+                    <div class="p-4 flex gap-4 bg-surface/50 border-b border-slate-800">
+                        <input type="text" v-model="filters.logistics.search" placeholder="Pesquisar SAP ou Descrição..." class="w-64 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                    </div>
+                    <div class="flex-1 overflow-auto p-4 custom-scrollbar">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead class="bg-slate-800/50 text-slate-300 text-xs uppercase sticky top-0 backdrop-blur-md">
+                                <tr>
+                                    <th class="p-3 border-b border-slate-700">Código SAP</th>
+                                    <th class="p-3 border-b border-slate-700">Descrição</th>
+                                    <th class="p-3 border-b border-slate-700 text-right">Entradas</th>
+                                    <th class="p-3 border-b border-slate-700 text-right">Saídas</th>
+                                    <th class="p-3 border-b border-slate-700 text-right text-primary">Stock Real</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800">
+                                <tr v-for="item in stockLedger" :key="item.sap" class="hover:bg-slate-800/30">
+                                    <td class="p-3 font-medium text-white">{{ item.sap }}</td>
+                                    <td class="p-3 text-slate-300 truncate max-w-xs">{{ item.desc }}</td>
+                                    <td class="p-3 text-right text-success">{{ item.in }}</td>
+                                    <td class="p-3 text-right text-danger">{{ item.out }}</td>
+                                    <td class="p-3 text-right font-bold" :class="item.balance > 0 ? 'text-primary' : 'text-slate-500'">{{ item.balance }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Movement Form -->
+                <div class="w-1/3 bg-surface/30 p-6 flex flex-col">
+                    <h3 class="text-lg font-semibold mb-6 flex items-center gap-2"><i data-lucide="arrow-left-right" class="w-5 h-5"></i> Registar Movimento</h3>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Tipo de Movimento</label>
+                            <select v-model="moveForm.type" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary">
+                                <option value="ENTRADA">ENTRADA (Receção Material)</option>
+                                <option value="SAIDA">SAÍDA (Para Fabrico)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Código SAP</label>
+                            <input type="text" v-model="moveForm.sap" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Quantidade</label>
+                            <input type="number" v-model.number="moveForm.qty" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary">
+                        </div>
+                        <div v-if="moveForm.type === 'SAIDA'">
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Spool Destino</label>
+                            <input type="text" v-model="moveForm.spool" placeholder="Tag do Spool" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Heat Number (Corrida)</label>
+                            <input type="text" v-model="moveForm.heat" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary">
+                        </div>
+                        <button @click="processMovement" class="w-full bg-primary hover:bg-blue-600 text-white font-medium py-2.5 rounded mt-4 transition shadow-lg disabled:opacity-50" :disabled="!moveForm.sap || !moveForm.qty || !isOnline">
+                            Registar {{ moveForm.type }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MÓDULO D: KIOSK MODE -->
+        <div v-if="activeModule === 'KIOSK'" class="absolute inset-0 bg-dark z-50 flex flex-col fade-enter-active overflow-hidden">
+            <header class="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-6 shrink-0 shadow-lg">
+                <div class="flex items-center gap-3">
+                    <div class="bg-primary/20 p-2 rounded-lg"><i data-lucide="hard-hat" class="w-6 h-6 text-primary"></i></div>
+                    <h1 class="text-xl font-black tracking-wider">MODO OFICINA</h1>
+                </div>
+                <button @click="changeModule('DASHBOARD')" class="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <i data-lucide="log-out" class="w-4 h-4"></i> Sair do Kiosk
+                </button>
+            </header>
+
+            <div class="flex-1 p-6 overflow-auto">
+                <div class="max-w-4xl mx-auto">
+                    <div class="mb-8 relative">
+                        <i data-lucide="search" class="absolute left-4 top-4 w-6 h-6 text-slate-400"></i>
+                        <input type="text" v-model="kioskSearch" placeholder="Scan ou digite o Spool / Junta..." class="w-full bg-slate-800 border-2 border-slate-700 rounded-xl pl-14 pr-6 py-4 text-xl text-white focus:outline-none focus:border-primary shadow-xl">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Spools para Iniciar -->
+                        <div class="bg-surface rounded-2xl p-6 border border-slate-800 shadow-xl">
+                            <h2 class="text-lg font-bold mb-4 text-slate-300 border-b border-slate-700 pb-2">Spools (Prontos)</h2>
+                            <div class="space-y-3">
+                                <div v-for="spool in kioskSpools" :key="spool.Tag_Spool" class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                                    <div>
+                                        <div class="font-bold text-lg text-white">{{ spool.Tag_Spool }}</div>
+                                        <div class="text-sm text-slate-400">{{ spool.Area }}</div>
+                                    </div>
+                                    <button @click="kioskStartSpool(spool.Tag_Spool)" class="bg-accent hover:bg-yellow-500 text-black font-bold py-3 px-6 rounded-lg shadow-lg active:scale-95 transition" :disabled="!isOnline">
+                                        INICIAR
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Juntas para Soldar -->
+                        <div class="bg-surface rounded-2xl p-6 border border-slate-800 shadow-xl">
+                            <h2 class="text-lg font-bold mb-4 text-slate-300 border-b border-slate-700 pb-2">Juntas (Para Soldar)</h2>
+                            <div class="space-y-3">
+                                <div v-for="joint in kioskJoints" :key="joint.ID_Junta" class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                                    <div>
+                                        <div class="font-bold text-lg text-white">Junta: {{ joint.ID_Junta }}</div>
+                                        <div class="text-sm text-slate-400">Spool: {{ joint.Tag_Spool }}</div>
+                                    </div>
+                                    <button @click="kioskFinishJoint(joint)" class="bg-success hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg active:scale-95 transition" :disabled="!isOnline">
+                                        SOLDADA
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
+
+    // MOCK DATA PARA TESTE LOCAL (Se falhar o google.script.run)
+    const mockData = {
+        db1: [{Tag_Spool: 'SPL-001', Tag_ISO: 'ISO-100', Area: 'A1', Sistema: 'SYS1', Estado_Fabrico: 'PENDENTE', Diametro_Max: '4"'},
+              {Tag_Spool: 'SPL-002', Tag_ISO: 'ISO-100', Area: 'A1', Sistema: 'SYS1', Estado_Fabrico: 'EM CORTE', Diametro_Max: '2"'}],
+        db2: [{ID_Junta: 'J1', Tag_Spool: 'SPL-002', Componente_A: '1', Componente_B: '2', Data_Soldadura: ''}],
+        db3: [{Tag_ISO: 'ISO-100', Item_No: '1', Descricao_Material: 'Tubo 4"', Qtd_Desenhada: 10, Unidade: 'm', Codigo_SAP: 'SAP1', Tag_Spool: '', Qtd_Alocada: 0},
+              {Tag_ISO: 'ISO-100', Item_No: '1', Descricao_Material: 'Tubo 4"', Qtd_Desenhada: 10, Unidade: 'm', Codigo_SAP: 'SAP1', Tag_Spool: 'SPL-002', Qtd_Alocada: 4}],
+        db4: [{Tipo_Movimento: 'ENTRADA', Codigo_SAP: 'SAP1', Quantidade: 20}, {Tipo_Movimento: 'SAIDA', Codigo_SAP: 'SAP1', Quantidade: 5}],
+        db5: [{Avanco_Soldadura_Calc: 45}],
+        db6: []
+    };
+
+    createApp({
+        setup() {
+            // State
+            const loading = ref({ initial: true, action: false, message: '', error: '' });
+            const isOnline = ref(navigator.onLine);
+            const activeModule = ref('DASHBOARD');
+            const sidebarOpen = ref(true);
+            const toasts = ref([]);
+            let toastId = 0;
+            const modal = ref({ show: false, title: '', message: '', resolve: null, reject: null });
+
+            // Data
+            const db1 = ref([]);
+            const db2 = ref([]);
+            const db3 = ref([]);
+            const db4 = ref([]);
+            const db5 = ref([]);
+
+            // Dashboard State
+            const statusList = ['PENDENTE', 'EM KITTING', 'EM CORTE', 'EM MONTAGEM', 'EM SOLDADURA', 'EM NDT', 'CONCLUIDO', 'HOLD'];
+            const filters = ref({ spool: { search: '', area: '', status: '' }, logistics: { search: '' } });
+            const selectedSpools = ref([]);
+            const bulkStatusAction = ref('');
+
+            // Spooling State
+            const selectedIsoForSpooling = ref('');
+            const allocationForm = ref({}); // { itemNo: { spool, qty, dest } }
+            const jointForm = ref({}); // { spoolTag: { id, compA, compB, heatA, heatB } }
+
+            // Logistics State
+            const moveForm = ref({ type: 'ENTRADA', sap: '', qty: '', spool: '', heat: '' });
+
+            // Kiosk State
+            const kioskSearch = ref('');
+
+            // Initialization
+            onMounted(() => {
+                window.addEventListener('online', () => isOnline.value = true);
+                window.addEventListener('offline', () => isOnline.value = false);
+
+                fetchData();
+
+                // Initialize Lucide icons
+                nextTick(() => {
+                    if (window.lucide) window.lucide.createIcons();
+                });
+            });
+
+            watch(activeModule, () => {
+                nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+            });
+
+            // GAS Communication
+            const fetchData = () => {
+                loading.value.message = "A conectar ao Google Apps Script...";
+                if (typeof google !== 'undefined' && google.script) {
+                    loading.value.message = "A buscar dados da folha de cálculo...";
+                    google.script.run.withSuccessHandler(res => {
+                        if (res && res.error) {
+                            loading.value.error = "Erro do Servidor: " + res.error;
+                            loading.value.message = "Falha ao inicializar.";
+                            showToast(res.error, 'error');
+                            return;
+                        }
+                        updateState(res);
+                        loading.value.initial = false;
+                        showToast('Sistema inicializado', 'info');
+                    }).withFailureHandler(err => {
+                        console.error(err);
+                        loading.value.error = err.message || "Erro desconhecido ao comunicar com GAS.";
+                        loading.value.message = "Falha de ligação.";
+                        showToast('Erro a carregar dados', 'error');
+                    }).getInitialData();
+                } else {
+                    loading.value.message = "Ambiente Local Detetado. A usar dados falsos...";
+                    console.warn("Running locally, using mock data.");
+                    updateState(mockData);
+                    setTimeout(() => loading.value.initial = false, 1000);
+                }
+            };
+
+            const checkForRevisions = () => {
+                // Mock function to detect Revision Alerts based on MTO
+                // In a real application, you'd compare current MTO to previous states or Engineering db updates
+                // For demonstration, randomly flagging if an ISO revision changes.
+            }
+
+            const updateState = (data) => {
+                db1.value = data.db1 || [];
+                db2.value = data.db2 || [];
+                db3.value = data.db3 || [];
+                db4.value = data.db4 || [];
+                db5.value = data.db5 || [];
+
+                // Re-init forms based on data
+                db3.value.forEach(item => {
+                    if (!allocationForm.value[item.Item_No]) {
+                        allocationForm.value[item.Item_No] = { spool: '', qty: '', dest: 'SHOP' };
+                    }
+                });
+                db1.value.forEach(spool => {
+                    if (!jointForm.value[spool.Tag_Spool]) {
+                        jointForm.value[spool.Tag_Spool] = { id: '', compA: '', compB: '', heatA: '', heatB: '' };
+                    }
+                });
+            };
+
+            const runBackend = (funcName, ...args) => {
+                return new Promise((resolve, reject) => {
+                    if (!isOnline.value) {
+                        showToast('Operação cancelada. Sem ligação à rede.', 'error');
+                        reject('Offline');
+                        return;
+                    }
+                    loading.value.action = true;
+                    if (typeof google !== 'undefined' && google.script) {
+                        google.script.run.withSuccessHandler(res => {
+                            updateState(res);
+                            loading.value.action = false;
+                            nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+                            resolve(res);
+                        }).withFailureHandler(err => {
+                            loading.value.action = false;
+                            showToast(err.message || 'Erro na operação', 'error');
+                            reject(err);
+                        })[funcName](...args);
+                    } else {
+                        setTimeout(() => { loading.value.action = false; resolve(); showToast('Simulação local concluída', 'success'); }, 1000);
+                    }
+                });
+            };
+
+            // UI Helpers
+            const showToast = (message, type = 'info') => {
+                const id = toastId++;
+                toasts.value.push({ id, message, type });
+                setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000);
+            };
+
+            const confirmAction = (title, message) => {
+                return new Promise((resolve, reject) => {
+                    modal.value = { show: true, title, message, resolve, reject };
+                });
+            };
+
+            const changeModule = (mod) => {
+                activeModule.value = mod;
+                selectedSpools.value = [];
+            };
+
+            const isSpoolFrozen = (status) => {
+                const frozenStatuses = ['EM CORTE', 'EM MONTAGEM', 'EM SOLDADURA', 'EM NDT', 'CONCLUIDO', 'HOLD'];
+                return frozenStatuses.includes(status);
+            };
+
+            const getStatusBadgeClass = (status) => {
+                const base = "text-xs font-semibold px-2 py-1 rounded border ";
+                switch(status) {
+                    case 'CONCLUIDO': return base + 'bg-success/20 text-success border-success/30';
+                    case 'HOLD': return base + 'bg-danger/20 text-danger border-danger/30';
+                    case 'PENDENTE': return base + 'bg-slate-700 text-slate-300 border-slate-600';
+                    default: return base + 'bg-primary/20 text-primary border-primary/30';
+                }
+            };
+
+            const enforceNumber = (itemNo, max) => {
+                let val = allocationForm.value[itemNo].qty;
+                if (typeof val === 'string') val = parseFloat(val.replace(',', '.'));
+                if (isNaN(val) || val < 0) val = 0;
+                if (val > max) val = max;
+                allocationForm.value[itemNo].qty = val;
+            };
+
+            // --- COMPUTED PROPERTIES ---
+
+            // Dashboard
+            const filteredSpools = computed(() => {
+                return db1.value.filter(s => {
+                    const matchSearch = s.Tag_Spool.toLowerCase().includes(filters.value.spool.search.toLowerCase()) ||
+                                        s.Tag_ISO.toLowerCase().includes(filters.value.spool.search.toLowerCase());
+                    const matchArea = filters.value.spool.area === '' || s.Area === filters.value.spool.area;
+                    const matchStatus = filters.value.spool.status === '' || s.Estado_Fabrico === filters.value.spool.status;
+                    return matchSearch && matchArea && matchStatus;
+                });
+            });
+            const uniqueAreas = computed(() => [...new Set(db1.value.map(s => s.Area))]);
+            const spoolsByStatus = computed(() => {
+                return db1.value.reduce((acc, s) => { acc[s.Estado_Fabrico] = (acc[s.Estado_Fabrico] || 0) + 1; return acc; }, {});
+            });
+            const globalProgress = computed(() => db5.value.length > 0 ? (db5.value[0].Avanco_Soldadura_Calc || 0) : 0);
+
+            // Spooling
+            const uniqueIsos = computed(() => [...new Set(db3.value.map(i => i.Tag_ISO))]);
+            const spoolsForSelectedIso = computed(() => db1.value.filter(s => s.Tag_ISO === selectedIsoForSpooling.value));
+
+            // Returns base items (not allocated lines) for the selected ISO
+            const mtoForSelectedIso = computed(() => {
+                return db3.value.filter(i => i.Tag_ISO === selectedIsoForSpooling.value && (!i.Tag_Spool || i.Tag_Spool === ''));
+            });
+
+            const revisionAlerts = computed(() => {
+                const alerts = [];
+                if (!selectedIsoForSpooling.value) return alerts;
+
+                // Find any spool for this ISO that has a different revision than the base MTO
+                const isoSpools = db1.value.filter(s => s.Tag_ISO === selectedIsoForSpooling.value);
+                const mtoRev = isoSpools.length > 0 ? isoSpools[0].Rev_ISO : null;
+
+                isoSpools.forEach(spool => {
+                   if (mtoRev && spool.Rev_ISO !== mtoRev) {
+                       alerts.push(`Alerta Revisão: Spool ${spool.Tag_Spool} está na Rev ${spool.Rev_ISO}, mas a ISO é Rev ${mtoRev}. Verifica as quantidades.`);
+                   }
+                });
+                return alerts;
+            });
+
+            const getBalançoMto = (item) => {
+                // Find all allocated lines for this ISO and Item_No
+                const allocatedLines = db3.value.filter(i => i.Tag_ISO === item.Tag_ISO && i.Item_No === item.Item_No && i.Tag_Spool !== '');
+                const totalAllocated = allocatedLines.reduce((sum, line) => sum + Number(line.Qtd_Alocada), 0);
+                return Number(item.Qtd_Desenhada) - totalAllocated;
+            };
+
+            const getAllocatedMaterials = (tagSpool) => {
+                return db3.value.filter(i => i.Tag_Spool === tagSpool);
+            };
+
+            const getJointsForSpool = (tagSpool) => {
+                return db2.value.filter(j => j.Tag_Spool === tagSpool);
+            };
+
+            const getHeatNumbersForSpool = (tagSpool) => {
+                return [...new Set(db4.value.filter(mov => mov.Tipo_Movimento === 'SAIDA' && mov.Tag_Spool_Destino === tagSpool && mov.Heat_Number).map(mov => mov.Heat_Number))];
+            };
+
+            // Logistics
+            const stockLedger = computed(() => {
+                const ledger = {};
+                db4.value.forEach(mov => {
+                    if (!ledger[mov.Codigo_SAP]) {
+                        ledger[mov.Codigo_SAP] = { sap: mov.Codigo_SAP, desc: mov.Descricao_Material || 'N/A', in: 0, out: 0, balance: 0 };
+                    }
+                    if (mov.Tipo_Movimento === 'ENTRADA') ledger[mov.Codigo_SAP].in += Number(mov.Quantidade);
+                    if (mov.Tipo_Movimento === 'SAIDA') ledger[mov.Codigo_SAP].out += Number(mov.Quantidade);
+                    ledger[mov.Codigo_SAP].balance = ledger[mov.Codigo_SAP].in - ledger[mov.Codigo_SAP].out;
+                });
+                return Object.values(ledger).filter(item => item.sap.toLowerCase().includes(filters.value.logistics.search.toLowerCase()));
+            });
+
+            const getMissingStockForSpool = (tagSpool) => {
+                const needed = {};
+                // Sum what is needed
+                getAllocatedMaterials(tagSpool).forEach(mat => {
+                    if(!mat.Codigo_SAP) return;
+                    needed[mat.Codigo_SAP] = (needed[mat.Codigo_SAP] || 0) + Number(mat.Qtd_Alocada);
+                });
+
+                const missing = [];
+                // Check against ledger
+                const ledgerArray = stockLedger.value;
+                for (let sap in needed) {
+                    const stock = ledgerArray.find(l => l.sap === sap);
+                    const available = stock ? stock.balance : 0;
+                    if (available < needed[sap]) {
+                        missing.push({ SAP: sap, falta: needed[sap] - available });
+                    }
+                }
+                return missing;
+            };
+
+            // Kiosk
+            const kioskSpools = computed(() => {
+                return db1.value.filter(s => s.Estado_Fabrico === 'PENDENTE' || s.Estado_Fabrico === 'EM KITTING')
+                                .filter(s => s.Tag_Spool.toLowerCase().includes(kioskSearch.value.toLowerCase()));
+            });
+            const kioskJoints = computed(() => {
+                return db2.value.filter(j => !j.Data_Soldadura)
+                                .filter(j => j.ID_Junta.toLowerCase().includes(kioskSearch.value.toLowerCase()) ||
+                                             j.Tag_Spool.toLowerCase().includes(kioskSearch.value.toLowerCase()));
+            });
+
+            // --- ACTIONS ---
+
+            const toggleAllSpools = (e) => {
+                if (e.target.checked) selectedSpools.value = filteredSpools.value.map(s => s.Tag_Spool);
+                else selectedSpools.value = [];
+            };
+
+            const applyBulkStatus = async () => {
+                if (selectedSpools.value.length === 0) return;
+                try {
+                    await confirmAction('Alterar Estado', `Tem a certeza que quer alterar ${selectedSpools.value.length} spools para ${bulkStatusAction.value}?`);
+                    await runBackend('updateSpoolsStatus', selectedSpools.value, bulkStatusAction.value);
+                    showToast('Estados atualizados', 'success');
+                    selectedSpools.value = [];
+                } catch(e) {}
+            };
+
+            const processAllocation = async (item) => {
+                const form = allocationForm.value[item.Item_No];
+                try {
+                    await runBackend('allocateMaterial', item.Tag_ISO, item.Item_No, form.spool, form.qty, form.dest);
+                    showToast('Material alocado', 'success');
+                    form.qty = ''; // Reset input
+                } catch(e) {}
+            };
+
+            const processCreateJoint = async (spool) => {
+                const form = jointForm.value[spool.Tag_Spool];
+                const jointData = {
+                    Tag_ISO: spool.Tag_ISO,
+                    Tag_Spool: spool.Tag_Spool,
+                    ID_Junta: form.id,
+                    Componente_A: form.compA,
+                    Componente_B: form.compB,
+                    Corrida_A: form.heatA,
+                    Corrida_B: form.heatB
+                };
+                try {
+                    await runBackend('createJoint', jointData);
+                    showToast('Junta mapeada', 'success');
+                    form.id = ''; form.compA = ''; form.compB = ''; form.heatA = ''; form.heatB = ''; // Reset
+                } catch(e) {}
+            };
+
+            const processDeleteSpool = async (spool) => {
+                try {
+                    await confirmAction('Apagar Spool', `Tem a certeza que quer apagar o Spool ${spool.Tag_Spool}? Isto vai desalocar todos os materiais.`);
+                    await runBackend('deleteSpool', spool.Tag_Spool);
+                    showToast(`Spool ${spool.Tag_Spool} apagado`, 'success');
+                } catch(e) {}
+            };
+
+            const processDeallocate = async (spool, item) => {
+                try {
+                    await confirmAction('Devolver Material', `Quer devolver ${item.Qtd_Alocada} de ${item.Descricao_Material}?`);
+                    await runBackend('deallocateMaterial', spool.Tag_Spool, item.Item_No, item.Qtd_Alocada);
+                    showToast(`Material devolvido`, 'success');
+                } catch(e) {}
+            };
+
+            const processMovement = async () => {
+                try {
+                    await runBackend('addInventoryMovement', { ...moveForm.value });
+                    showToast('Movimento registado', 'success');
+                    moveForm.value.qty = ''; // Reset qty
+                } catch(e) {}
+            };
+
+            const kioskStartSpool = async (tagSpool) => {
+                try {
+                    await runBackend('updateSpoolsStatus', [tagSpool], 'EM CORTE');
+                    showToast(`Spool ${tagSpool} iniciado!`, 'success');
+                } catch(e) {}
+            };
+
+            const kioskFinishJoint = async (joint) => {
+                try {
+                    await runBackend('finishJointKiosk', joint.ID_Junta, joint.Tag_Spool);
+                    showToast(`Junta ${joint.ID_Junta} terminada!`, 'success');
+                } catch(e) {}
+            };
+
+            return {
+                loading, isOnline, activeModule, sidebarOpen, toasts, modal,
+                filters, selectedSpools, bulkStatusAction, statusList,
+                filteredSpools, uniqueAreas, spoolsByStatus, globalProgress,
+                selectedIsoForSpooling, uniqueIsos, spoolsForSelectedIso, mtoForSelectedIso, allocationForm, jointForm,
+                stockLedger, moveForm,
+                kioskSearch, kioskSpools, kioskJoints,
+                changeModule, toggleAllSpools, applyBulkStatus, getStatusBadgeClass, getBalançoMto, enforceNumber,
+                processAllocation, isSpoolFrozen, getAllocatedMaterials, getMissingStockForSpool, getJointsForSpool, processCreateJoint,
+                processMovement, kioskStartSpool, kioskFinishJoint, processDeallocate, processDeleteSpool, getHeatNumbersForSpool, revisionAlerts
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

@@ -15,48 +15,47 @@ function doGet(e) {
 }
 
 function getInitialData() {
-  const ss = getActiveSpreadsheet();
-  if (!ss) return { error: "Sem acesso ao SpreadsheetApp" };
+  try {
+    const ss = getActiveSpreadsheet();
+    if (!ss) return { error: "Sem acesso ao SpreadsheetApp" };
 
-  const getSheetData = (sheetName) => {
-    const sheet = ss.getSheetByName(sheetName);
-    if (!sheet) return [];
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return []; // Empty or only headers
+    const getSheetData = (sheetName) => {
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return [];
+      // Using getDisplayValues() instead of getValues() to prevent cell error / date serialization issues
+      const data = sheet.getDataRange().getDisplayValues();
+      if (data.length <= 1) return []; // Empty or only headers
 
-    const headers = data[0];
-    const sanitizedData = [];
+      const headers = data[0];
+      const sanitizedData = [];
 
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      // Skip ghost rows (completely empty lines)
-      if (row.join('').trim() === '') continue;
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        // Skip ghost rows (completely empty lines)
+        if (row.join('').trim() === '') continue;
 
-      let obj = {};
-      headers.forEach((header, index) => {
-        const val = row[index];
-        // Sanitize Dates to prevent serialization errors over google.script.run
-        if (val instanceof Date) {
-          obj[header] = val.toISOString();
-        } else {
-          obj[header] = val;
-        }
-      });
-      obj['_rowIndex'] = i + 1; // +1 for 0-index
-      sanitizedData.push(obj);
-    }
+        let obj = {};
+        headers.forEach((header, index) => {
+          obj[header] = row[index];
+        });
+        obj['_rowIndex'] = i + 1; // +1 for 0-index
+        sanitizedData.push(obj);
+      }
 
-    return sanitizedData;
-  };
+      return sanitizedData;
+    };
 
-  return {
-    db1: getSheetData('DB_1_SpoolTracker_Definitivo'),
-    db2: getSheetData('DB_2_WeldingMap_NDT'),
-    db3: getSheetData('DB_3_BOM_Engenharia'),
-    db4: getSheetData('DB_4_Inventario_Logistica'),
-    db5: getSheetData('DB_5_Planeamento_Faturacao'),
-    db6: getSheetData('DB_6_Logs')
-  };
+    return {
+      db1: getSheetData('DB_1_SpoolTracker_Definitivo'),
+      db2: getSheetData('DB_2_WeldingMap_NDT'),
+      db3: getSheetData('DB_3_BOM_Engenharia'),
+      db4: getSheetData('DB_4_Inventario_Logistica'),
+      db5: getSheetData('DB_5_Planeamento_Faturacao'),
+      db6: getSheetData('DB_6_Logs')
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
 function logAction(action, target, details) {

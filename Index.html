@@ -633,6 +633,7 @@
                         console.error(err);
                         loading.value.error = err.message || "Erro desconhecido ao comunicar com GAS.";
                         loading.value.message = "Falha de ligação.";
+                        loading.value.initial = false;
                         showToast('Erro a carregar dados', 'error');
                     }).getInitialData();
                 } else {

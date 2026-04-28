@@ -108,6 +108,68 @@
         </div>
     </div>
 
+    <!-- JOINT MODAL -->
+    <div v-if="jointModal.show" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="glass-panel rounded-xl p-6 max-w-2xl w-full shadow-2xl border border-slate-700 m-4">
+            <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-3">
+                <div class="flex items-center gap-3 text-primary">
+                    <i data-lucide="link" class="w-6 h-6"></i>
+                    <h3 class="text-lg font-bold">Mapear Junta - {{ jointModal.spool.Tag_Spool }}</h3>
+                </div>
+                <button @click="closeJointModal" class="text-slate-400 hover:text-white transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="col-span-full">
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">ID da Junta (Criar ou Escolher)</label>
+                    <input type="text" list="existingJoints" v-model="jointForm[jointModal.spool.Tag_Spool].id" placeholder="Digite o ID da Junta..." class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                    <datalist id="existingJoints">
+                        <option v-for="j in getJointsForSpool(jointModal.spool.Tag_Spool)" :value="j.ID_Junta"></option>
+                    </datalist>
+                </div>
+
+                <div>
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">Componente A</label>
+                    <select v-model="jointForm[jointModal.spool.Tag_Spool].compA" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        <option value="">Selecione...</option>
+                        <option v-for="mat in getAllocatedMaterials(jointModal.spool.Tag_Spool)" :value="mat.Item_No">Item {{ mat.Item_No }} - {{ mat.Descricao_Material }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">Corrida A (Heat No.)</label>
+                    <select v-model="jointForm[jointModal.spool.Tag_Spool].heatA" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        <option value="">N/A</option>
+                        <option v-for="heat in getHeatNumbersForSpool(jointModal.spool.Tag_Spool)" :value="heat">{{ heat }}</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">Componente B</label>
+                    <select v-model="jointForm[jointModal.spool.Tag_Spool].compB" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        <option value="">Selecione...</option>
+                        <option v-for="mat in getAllocatedMaterials(jointModal.spool.Tag_Spool)" :value="mat.Item_No">Item {{ mat.Item_No }} - {{ mat.Descricao_Material }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">Corrida B (Heat No.)</label>
+                    <select v-model="jointForm[jointModal.spool.Tag_Spool].heatB" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        <option value="">N/A</option>
+                        <option v-for="heat in getHeatNumbersForSpool(jointModal.spool.Tag_Spool)" :value="heat">{{ heat }}</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 border-t border-slate-700 pt-4">
+                <button @click="closeJointModal" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition text-white text-sm font-medium">Cancelar</button>
+                <button @click="processCreateJoint(jointModal.spool); closeJointModal()" class="px-6 py-2 rounded bg-primary hover:bg-blue-600 transition text-white text-sm font-medium shadow-lg shadow-primary/20 flex items-center gap-2" :disabled="!jointForm[jointModal.spool.Tag_Spool].id || !jointForm[jointModal.spool.Tag_Spool].compA || !jointForm[jointModal.spool.Tag_Spool].compB || !isOnline">
+                    <i data-lucide="save" class="w-4 h-4"></i> Guardar Junta
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- SIDEBAR -->
     <aside :class="['bg-surface border-r border-slate-800 transition-all duration-300 flex flex-col z-40 relative shadow-xl', sidebarOpen ? 'w-64' : 'w-16']" v-show="activeModule !== 'KIOSK'">
         <div class="h-16 flex items-center justify-between px-4 border-b border-slate-800">
@@ -172,66 +234,151 @@
                 </div>
             </header>
 
-            <!-- Filters -->
-            <div class="p-4 border-b border-slate-800 flex items-center gap-4 bg-surface/50 shrink-0">
-                <div class="relative flex-1 max-w-xs">
-                    <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-slate-400"></i>
-                    <input type="text" v-model="filters.spool.search" placeholder="Pesquisar Spool ou ISO..." class="w-full bg-slate-900 border border-slate-700 rounded pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
-                </div>
-                <select v-model="filters.spool.area" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
-                    <option value="">Todas as Áreas</option>
-                    <option v-for="area in uniqueAreas" :value="area">{{ area }}</option>
-                </select>
-                <select v-model="filters.spool.status" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
-                    <option value="">Todos os Estados</option>
-                    <option v-for="status in statusList" :value="status">{{ status }}</option>
-                </select>
+            <!-- Workspace Split -->
+            <div class="flex-1 flex overflow-hidden relative">
 
-                <div class="ml-auto flex gap-2">
-                    <select v-if="selectedSpools.length > 0" v-model="bulkStatusAction" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-primary focus:outline-none focus:border-primary">
-                        <option value="" disabled>Alterar Estado...</option>
-                        <option v-for="status in statusList" :value="status">{{ status }}</option>
-                    </select>
-                    <button v-if="selectedSpools.length > 0 && bulkStatusAction" @click="applyBulkStatus" class="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded text-sm font-medium transition shadow-lg shadow-primary/20" :disabled="!isOnline">
-                        Aplicar a {{ selectedSpools.length }}
-                    </button>
-                </div>
-            </div>
+                <!-- Main Grid Panel -->
+                <div class="flex flex-col bg-surface/30 transition-all duration-300" :style="{ width: dashboardSplitRatio + '%' }">
+                    <!-- Filters -->
+                    <div class="p-4 border-b border-slate-800 flex items-center gap-3 bg-surface/50 shrink-0 flex-wrap">
+                        <div class="relative flex-1 min-w-[150px] max-w-xs">
+                            <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-slate-400"></i>
+                            <input type="text" v-model="filters.spool.search" placeholder="Pesquisar Spool ou ISO..." class="w-full bg-slate-900 border border-slate-700 rounded pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
+                        </div>
+                        <select v-model="filters.spool.area" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                            <option value="">Todas as Áreas</option>
+                            <option v-for="area in uniqueAreas" :value="area">{{ area }}</option>
+                        </select>
+                        <select v-model="filters.spool.sistema" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                            <option value="">Todos os Sist.</option>
+                            <option v-for="sys in uniqueSystems" :value="sys">{{ sys }}</option>
+                        </select>
+                        <select v-model="filters.spool.status" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                            <option value="">Todos os Estados</option>
+                            <option v-for="status in statusList" :value="status">{{ status }}</option>
+                        </select>
+                        <button @click="resetDashboardFilters" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition" title="Limpar Filtros">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
 
-            <!-- Table -->
-            <div class="flex-1 overflow-auto p-4 custom-scrollbar">
-                <div class="bg-surface border border-slate-800 rounded-lg overflow-hidden shadow-xl">
-                    <table class="w-full text-left text-sm whitespace-nowrap">
-                        <thead class="bg-slate-800/50 text-slate-300 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
-                            <tr>
-                                <th class="p-3 w-10 text-center border-b border-slate-700">
-                                    <input type="checkbox" @change="toggleAllSpools" :checked="selectedSpools.length === filteredSpools.length && filteredSpools.length > 0" class="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary">
-                                </th>
-                                <th class="p-3 border-b border-slate-700 font-semibold">Spool</th>
-                                <th class="p-3 border-b border-slate-700 font-semibold">ISO</th>
-                                <th class="p-3 border-b border-slate-700 font-semibold">Área / Sist.</th>
-                                <th class="p-3 border-b border-slate-700 font-semibold">Estado</th>
-                                <th class="p-3 border-b border-slate-700 font-semibold text-right">Diam. Máx</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-800 text-slate-300">
-                            <tr v-for="spool in filteredSpools" :key="spool.Tag_Spool" class="hover:bg-slate-800/50 transition-colors">
-                                <td class="p-3 text-center">
-                                    <input type="checkbox" :value="spool.Tag_Spool" v-model="selectedSpools" class="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary">
-                                </td>
-                                <td class="p-3 font-medium text-white">{{ spool.Tag_Spool }}</td>
-                                <td class="p-3 text-slate-400">{{ spool.Tag_ISO }} <span class="text-xs bg-slate-700 px-1 rounded ml-1">R{{ spool.Rev_ISO }}</span></td>
-                                <td class="p-3">{{ spool.Area }} <span class="text-slate-500">/</span> {{ spool.Sistema }}</td>
-                                <td class="p-3">
-                                    <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico || 'N/A' }}</span>
-                                </td>
-                                <td class="p-3 text-right text-slate-400">{{ spool.Diametro_Max }}</td>
-                            </tr>
-                            <tr v-if="filteredSpools.length === 0">
-                                <td colspan="6" class="p-8 text-center text-slate-500">Nenhum spool encontrado.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                        <div class="ml-auto flex gap-2">
+                            <select v-if="selectedSpools.length > 0" v-model="bulkStatusAction" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-primary focus:outline-none focus:border-primary">
+                                <option value="" disabled>Alterar Estado...</option>
+                                <option v-for="status in statusList" :value="status">{{ status }}</option>
+                            </select>
+                            <button v-if="selectedSpools.length > 0 && bulkStatusAction" @click="applyBulkStatus" class="px-4 py-2 bg-primary hover:bg-blue-600 text-white rounded text-sm font-medium transition shadow-lg shadow-primary/20" :disabled="!isOnline">
+                                Aplicar a {{ selectedSpools.length }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="flex-1 overflow-auto p-4 custom-scrollbar">
+                        <div class="bg-surface border border-slate-800 rounded-lg overflow-hidden shadow-xl">
+                            <table class="w-full text-left text-sm whitespace-nowrap">
+                                <thead class="bg-slate-800/50 text-slate-300 text-xs uppercase sticky top-0 z-10 backdrop-blur-md">
+                                    <tr>
+                                        <th class="p-3 w-10 text-center border-b border-slate-700">
+                                            <input type="checkbox" @change="toggleAllSpools" :checked="selectedSpools.length === filteredSpools.length && filteredSpools.length > 0" class="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary">
+                                        </th>
+                                        <th class="p-3 border-b border-slate-700 font-semibold cursor-pointer hover:text-white transition" @click="sortBy('dashboard', 'Tag_Spool')">
+                                            <div class="flex items-center gap-1">Spool <i v-if="sort.dashboard.key === 'Tag_Spool'" :data-lucide="sort.dashboard.order === 'asc' ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i></div>
+                                        </th>
+                                        <th class="p-3 border-b border-slate-700 font-semibold cursor-pointer hover:text-white transition" @click="sortBy('dashboard', 'Tag_ISO')">
+                                            <div class="flex items-center gap-1">ISO <i v-if="sort.dashboard.key === 'Tag_ISO'" :data-lucide="sort.dashboard.order === 'asc' ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i></div>
+                                        </th>
+                                        <th class="p-3 border-b border-slate-700 font-semibold cursor-pointer hover:text-white transition" @click="sortBy('dashboard', 'Area')">
+                                            <div class="flex items-center gap-1">Área / Sist. <i v-if="sort.dashboard.key === 'Area'" :data-lucide="sort.dashboard.order === 'asc' ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i></div>
+                                        </th>
+                                        <th class="p-3 border-b border-slate-700 font-semibold cursor-pointer hover:text-white transition" @click="sortBy('dashboard', 'Estado_Fabrico')">
+                                            <div class="flex items-center gap-1">Estado <i v-if="sort.dashboard.key === 'Estado_Fabrico'" :data-lucide="sort.dashboard.order === 'asc' ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i></div>
+                                        </th>
+                                        <th class="p-3 border-b border-slate-700 font-semibold text-right cursor-pointer hover:text-white transition" @click="sortBy('dashboard', 'Diametro_Max')">
+                                            <div class="flex items-center justify-end gap-1">Diam. Máx <i v-if="sort.dashboard.key === 'Diametro_Max'" :data-lucide="sort.dashboard.order === 'asc' ? 'chevron-up' : 'chevron-down'" class="w-3 h-3"></i></div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800 text-slate-300">
+                                    <tr v-for="spool in paginatedSpools" :key="spool.Tag_Spool" class="hover:bg-slate-800/50 transition-colors cursor-pointer" :class="{'bg-primary/20': selectedDetailSpool && selectedDetailSpool.Tag_Spool === spool.Tag_Spool}" @click="selectDetailSpool(spool)">
+                                        <td class="p-3 text-center" @click.stop>
+                                            <input type="checkbox" :value="spool.Tag_Spool" v-model="selectedSpools" class="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary">
+                                        </td>
+                                        <td class="p-3 font-medium text-white">{{ spool.Tag_Spool }}</td>
+                                        <td class="p-3 text-slate-400">{{ spool.Tag_ISO }} <span class="text-xs bg-slate-700 px-1 rounded ml-1">R{{ spool.Rev_ISO }}</span></td>
+                                        <td class="p-3">{{ spool.Area }} <span class="text-slate-500">/</span> {{ spool.Sistema }}</td>
+                                        <td class="p-3">
+                                            <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico || 'N/A' }}</span>
+                                        </td>
+                                        <td class="p-3 text-right text-slate-400">{{ spool.Diametro_Max }}</td>
+                                    </tr>
+                                    <tr v-if="paginatedSpools.length === 0">
+                                        <td colspan="6" class="p-8 text-center text-slate-500">Nenhum spool encontrado.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination Dashboard -->
+                        <div v-if="filteredSpools.length > dashboardPageSize" class="flex justify-between items-center mt-4 text-sm text-slate-400">
+                            <div>A mostrar {{ (dashboardPage - 1) * dashboardPageSize + 1 }} - {{ Math.min(dashboardPage * dashboardPageSize, filteredSpools.length) }} de {{ filteredSpools.length }}</div>
+                            <div class="flex gap-2">
+                                <button @click="dashboardPage--" :disabled="dashboardPage === 1" class="px-3 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition">Anterior</button>
+                                <button @click="dashboardPage++" :disabled="dashboardPage * dashboardPageSize >= filteredSpools.length" class="px-3 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition">Próxima</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dashboard Splitter -->
+                <div class="w-1 bg-slate-800 cursor-col-resize hover:bg-primary transition-colors flex-shrink-0 z-20" @mousedown="startDashDrag" v-show="dashboardSplitRatio < 100"></div>
+
+                <!-- Detail Panel (Master-Detail) -->
+                <div class="flex flex-col bg-surface/10 transition-all duration-300 border-l border-slate-800" :style="{ width: (100 - dashboardSplitRatio) + '%' }" v-show="dashboardSplitRatio < 100">
+                    <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center">
+                        <span class="flex items-center gap-2"><i data-lucide="settings" class="w-4 h-4 text-primary"></i> Centro de Controlo</span>
+                        <button @click="closeDetailPanel" class="text-slate-400 hover:text-white" title="Fechar Painel">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-1 overflow-auto p-6 custom-scrollbar" v-if="selectedDetailSpool">
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-bold text-white">{{ selectedDetailSpool.Tag_Spool }}</h2>
+                            <p class="text-slate-400 text-sm">ISO: {{ selectedDetailSpool.Tag_ISO }} (Rev {{ selectedDetailSpool.Rev_ISO }})</p>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 mb-6 text-sm">
+                            <div class="bg-slate-900/50 p-3 rounded border border-slate-800">
+                                <p class="text-xs text-slate-500 uppercase">Área / Sistema</p>
+                                <p class="font-medium text-slate-200">{{ selectedDetailSpool.Area }} / {{ selectedDetailSpool.Sistema }}</p>
+                            </div>
+                            <div class="bg-slate-900/50 p-3 rounded border border-slate-800">
+                                <p class="text-xs text-slate-500 uppercase">Diam. Max / Peso</p>
+                                <p class="font-medium text-slate-200">{{ selectedDetailSpool.Diametro_Max }} | {{ selectedDetailSpool.Peso_kg || 0 }}kg</p>
+                            </div>
+                        </div>
+
+                        <!-- Update Form -->
+                        <div class="space-y-4 border-t border-slate-800 pt-6">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 uppercase mb-1">Estado Atual</label>
+                                <select v-model="detailForm.status" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary">
+                                    <option v-for="status in statusList" :value="status">{{ status }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 uppercase mb-1">Observações</label>
+                                <textarea v-model="detailForm.notes" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white focus:border-primary resize-none" placeholder="Adicionar notas de fabrico..."></textarea>
+                            </div>
+                            <button @click="updateDetailSpool" class="w-full bg-primary hover:bg-blue-600 text-white font-medium py-2 rounded transition shadow-lg flex justify-center items-center gap-2" :disabled="!isOnline">
+                                <i data-lucide="save" class="w-4 h-4"></i> Gravar Alterações
+                            </button>
+                        </div>
+                    </div>
+                    <div v-else class="flex-1 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
+                        <i data-lucide="mouse-pointer-click" class="w-12 h-12 mb-4 opacity-50"></i>
+                        <p>Selecione um Spool na matriz para ver os detalhes e editar.</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -287,8 +434,8 @@
                                 </div>
 
                                 <!-- Allocation Form -->
-                                <div class="mt-2 pt-3 border-t border-slate-700 flex gap-2 items-end" v-if="getBalançoMto(item) > 0">
-                                    <div class="flex-1">
+                                <div class="mt-2 pt-3 border-t border-slate-700 flex flex-wrap gap-2 items-end" v-if="getBalançoMto(item) > 0">
+                                    <div class="flex-1 min-w-[120px]">
                                         <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Para Spool</label>
                                         <select v-model="allocationForm[item.Item_No].spool" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary">
                                             <option value="">Selecione...</option>
@@ -306,9 +453,12 @@
                                             <option value="FIELD">FIELD</option>
                                         </select>
                                     </div>
-                                    <button @click="processAllocation(item)" class="bg-primary hover:bg-blue-600 text-white rounded p-1.5 transition disabled:opacity-50" :disabled="!allocationForm[item.Item_No].spool || !allocationForm[item.Item_No].qty || allocationForm[item.Item_No].qty <= 0 || !isOnline" title="Alocar">
-                                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                                    </button>
+                                    <div class="flex gap-1">
+                                        <button @click="allocationForm[item.Item_No].qty = getBalançoMto(item)" class="bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 rounded px-2 py-1.5 transition" title="Máx">MÁX</button>
+                                        <button @click="processAllocation(item)" class="bg-primary hover:bg-blue-600 text-white rounded p-1.5 transition disabled:opacity-50" :disabled="!allocationForm[item.Item_No].spool || !allocationForm[item.Item_No].qty || allocationForm[item.Item_No].qty <= 0 || !isOnline" title="Alocar">
+                                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -324,13 +474,18 @@
                         <div class="grid grid-cols-1 gap-4">
                             <div v-for="spool in spoolsForSelectedIso" :key="spool.Tag_Spool" class="bg-surface border border-slate-700 rounded-xl overflow-hidden shadow-lg">
                                 <!-- Spool Header -->
-                                <div class="bg-slate-800/80 px-4 py-3 flex justify-between items-center border-b border-slate-700">
+                                <div class="bg-slate-800/80 px-4 py-3 flex justify-between items-center border-b border-slate-700 group">
                                     <div>
                                         <h3 class="font-bold text-white text-lg">{{ spool.Tag_Spool }}</h3>
                                         <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico }}</span>
                                     </div>
-                                    <div v-if="isSpoolFrozen(spool.Estado_Fabrico)" class="text-xs flex items-center text-accent bg-accent/10 px-2 py-1 rounded border border-accent/20">
-                                        <i data-lucide="lock" class="w-3 h-3 mr-1"></i> Freeze Mode
+                                    <div class="flex gap-2">
+                                        <div v-if="isSpoolFrozen(spool.Estado_Fabrico)" class="text-xs flex items-center text-accent bg-accent/10 px-2 py-1 rounded border border-accent/20">
+                                            <i data-lucide="lock" class="w-3 h-3 mr-1"></i> Freeze Mode
+                                        </div>
+                                        <button v-if="!isSpoolFrozen(spool.Estado_Fabrico)" @click="processDeleteSpool(spool)" class="text-slate-500 hover:text-danger opacity-0 group-hover:opacity-100 transition" title="Apagar Spool">
+                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        </button>
                                     </div>
                                 </div>
 
@@ -346,11 +501,14 @@
                                     <!-- Allocated Materials -->
                                     <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Materiais Alocados</h4>
                                     <div class="space-y-1 mb-4">
-                                        <div v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" class="flex justify-between items-center text-sm bg-slate-900/50 p-2 rounded border border-slate-800">
+                                        <div v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" class="flex justify-between items-center text-sm bg-slate-900/50 p-2 rounded border border-slate-800 group">
                                             <span class="text-slate-300"><span class="text-slate-500">#{{ mat.Item_No }}</span> {{ mat.Descricao_Material }}</span>
                                             <div class="flex items-center gap-3">
                                                 <span class="text-xs px-1.5 py-0.5 rounded" :class="mat.Destino === 'SHOP' ? 'bg-blue-900/50 text-blue-300' : 'bg-emerald-900/50 text-emerald-300'">{{ mat.Destino }}</span>
                                                 <span class="font-medium">{{ mat.Qtd_Alocada }} {{ mat.Unidade }}</span>
+                                                <button v-if="!isSpoolFrozen(spool.Estado_Fabrico)" @click="processDeallocate(spool, mat)" class="text-slate-500 hover:text-danger opacity-0 group-hover:opacity-100 transition" title="Devolver">
+                                                    <i data-lucide="x-circle" class="w-4 h-4"></i>
+                                                </button>
                                             </div>
                                         </div>
                                         <div v-if="getAllocatedMaterials(spool.Tag_Spool).length === 0" class="text-slate-500 text-xs italic">Nenhum material alocado.</div>
@@ -368,44 +526,11 @@
                                         </div>
                                     </div>
 
-                                    <!-- Create Joint Form -->
-                                    <div v-if="!isSpoolFrozen(spool.Estado_Fabrico) && getAllocatedMaterials(spool.Tag_Spool).length >= 2" class="mt-3 pt-3 border-t border-slate-700">
-                                        <div class="flex flex-col gap-2">
-                                            <div class="flex gap-2 items-end">
-                                                <div class="w-16">
-                                                    <input type="text" v-model="jointForm[spool.Tag_Spool].id" placeholder="ID Junta" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
-                                                </div>
-                                                <div class="flex-1">
-                                                    <select v-model="jointForm[spool.Tag_Spool].compA" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
-                                                        <option value="">Comp. A</option>
-                                                        <option v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" :value="mat.Item_No">Item {{ mat.Item_No }}</option>
-                                                    </select>
-                                                </div>
-                                                <div class="flex-1">
-                                                    <select v-model="jointForm[spool.Tag_Spool].compB" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
-                                                        <option value="">Comp. B</option>
-                                                        <option v-for="mat in getAllocatedMaterials(spool.Tag_Spool)" :value="mat.Item_No">Item {{ mat.Item_No }}</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div class="flex gap-2 items-end">
-                                                <div class="flex-1">
-                                                    <select v-model="jointForm[spool.Tag_Spool].heatA" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
-                                                        <option value="">Corrida A</option>
-                                                        <option v-for="heat in getHeatNumbersForSpool(spool.Tag_Spool)" :value="heat">{{ heat }}</option>
-                                                    </select>
-                                                </div>
-                                                <div class="flex-1">
-                                                    <select v-model="jointForm[spool.Tag_Spool].heatB" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary">
-                                                        <option value="">Corrida B</option>
-                                                        <option v-for="heat in getHeatNumbersForSpool(spool.Tag_Spool)" :value="heat">{{ heat }}</option>
-                                                    </select>
-                                                </div>
-                                                <button @click="processCreateJoint(spool)" class="bg-secondary hover:bg-slate-700 text-white rounded p-1.5 transition border border-slate-600 disabled:opacity-50" :disabled="!jointForm[spool.Tag_Spool].id || !jointForm[spool.Tag_Spool].compA || !jointForm[spool.Tag_Spool].compB || !isOnline" title="Criar Junta">
-                                                    <i data-lucide="plus" class="w-4 h-4"></i>
-                                                </button>
-                                            </div>
-                                        </div>
+                                    <!-- Create Joint Button -->
+                                    <div v-if="!isSpoolFrozen(spool.Estado_Fabrico) && getAllocatedMaterials(spool.Tag_Spool).length >= 2" class="mt-3 pt-3 border-t border-slate-700 text-right">
+                                        <button @click="openJointModal(spool)" class="text-xs font-semibold text-primary hover:text-blue-400 flex items-center gap-1 ml-auto">
+                                            <i data-lucide="plus-circle" class="w-4 h-4"></i> Mapear Nova Junta
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -548,7 +673,7 @@
 </div>
 
 <script>
-    const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
+    const { createApp, ref, shallowRef, computed, onMounted, nextTick, watch } = Vue;
 
     // MOCK DATA PARA TESTE LOCAL (Se falhar o google.script.run)
     const mockData = {
@@ -572,24 +697,78 @@
             const toasts = ref([]);
             let toastId = 0;
             const modal = ref({ show: false, title: '', message: '', resolve: null, reject: null });
+            const jointModal = ref({ show: false, spool: null });
+
+            const selectedDetailSpool = ref(null);
+            const detailForm = ref({ status: '', notes: '' });
 
             // Data
-            const db1 = ref([]);
-            const db2 = ref([]);
-            const db3 = ref([]);
-            const db4 = ref([]);
-            const db5 = ref([]);
+            const db1 = shallowRef([]);
+            const db2 = shallowRef([]);
+            const db3 = shallowRef([]);
+            const db4 = shallowRef([]);
+            const db5 = shallowRef([]);
 
             // Dashboard State
             const statusList = ['PENDENTE', 'EM KITTING', 'EM CORTE', 'EM MONTAGEM', 'EM SOLDADURA', 'EM NDT', 'CONCLUIDO', 'HOLD'];
-            const filters = ref({ spool: { search: '', area: '', status: '' }, logistics: { search: '' } });
+            const filters = ref({ spool: { search: '', area: '', sistema: '', status: '' }, logistics: { search: '' } });
+            const debouncedFilters = ref({ spool: { search: '' }, logistics: { search: '' } });
             const selectedSpools = ref([]);
             const bulkStatusAction = ref('');
+
+            let filterTimeout;
+            watch(() => filters.value.spool.search, (val) => {
+                clearTimeout(filterTimeout);
+                filterTimeout = setTimeout(() => { debouncedFilters.value.spool.search = val; }, 300);
+            });
+            watch(() => filters.value.logistics.search, (val) => {
+                clearTimeout(filterTimeout);
+                filterTimeout = setTimeout(() => { debouncedFilters.value.logistics.search = val; }, 300);
+            });
+
+            // Pagination State
+            const dashboardPage = ref(1);
+            const dashboardPageSize = 100;
+            const logisticsPage = ref(1);
+            const logisticsPageSize = 100;
+
+            const sort = ref({
+                dashboard: { key: '', order: 'asc' },
+                logistics: { key: '', order: 'asc' }
+            });
+
+            watch([() => filters.value.spool.area, () => filters.value.spool.sistema, () => filters.value.spool.status, () => debouncedFilters.value.spool.search], () => { dashboardPage.value = 1; });
+            watch([() => debouncedFilters.value.logistics.search], () => { logisticsPage.value = 1; });
 
             // Spooling State
             const selectedIsoForSpooling = ref('');
             const allocationForm = ref({}); // { itemNo: { spool, qty, dest } }
             const jointForm = ref({}); // { spoolTag: { id, compA, compB, heatA, heatB } }
+            const splitRatio = ref(50); // percentage for left panel in Spooling
+            const dashboardSplitRatio = ref(100); // percentage for dashboard table
+
+            let isDragging = false;
+            let isDashDragging = false;
+
+            const startDrag = () => { isDragging = true; document.body.style.cursor = 'col-resize'; };
+            const stopDrag = () => { isDragging = false; isDashDragging = false; document.body.style.cursor = 'default'; };
+
+            const startDashDrag = () => { isDashDragging = true; document.body.style.cursor = 'col-resize'; };
+
+            const doDrag = (e) => {
+                const containerWidth = document.body.clientWidth - (sidebarOpen.value ? 256 : 64); // rough estimate
+                let newRatio = (e.clientX - (sidebarOpen.value ? 256 : 64)) / containerWidth * 100;
+
+                if (isDragging) {
+                    if (newRatio < 10) newRatio = 0;
+                    if (newRatio > 90) newRatio = 100;
+                    splitRatio.value = newRatio;
+                } else if (isDashDragging) {
+                    if (newRatio < 10) newRatio = 0;
+                    if (newRatio > 90) newRatio = 100;
+                    dashboardSplitRatio.value = newRatio;
+                }
+            };
 
             // Logistics State
             const moveForm = ref({ type: 'ENTRADA', sap: '', qty: '', spool: '', heat: '' });
@@ -601,6 +780,8 @@
             onMounted(() => {
                 window.addEventListener('online', () => isOnline.value = true);
                 window.addEventListener('offline', () => isOnline.value = false);
+                window.addEventListener('mouseup', stopDrag);
+                window.addEventListener('mousemove', doDrag);
 
                 fetchData();
 
@@ -713,6 +894,16 @@
                 selectedSpools.value = [];
             };
 
+            const sortBy = (table, key) => {
+                if (sort.value[table].key === key) {
+                    sort.value[table].order = sort.value[table].order === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sort.value[table].key = key;
+                    sort.value[table].order = 'asc';
+                }
+                nextTick(() => { if (window.lucide) window.lucide.createIcons(); });
+            };
+
             const isSpoolFrozen = (status) => {
                 const frozenStatuses = ['EM CORTE', 'EM MONTAGEM', 'EM SOLDADURA', 'EM NDT', 'CONCLUIDO', 'HOLD'];
                 return frozenStatuses.includes(status);
@@ -740,15 +931,34 @@
 
             // Dashboard
             const filteredSpools = computed(() => {
-                return db1.value.filter(s => {
-                    const matchSearch = s.Tag_Spool.toLowerCase().includes(filters.value.spool.search.toLowerCase()) ||
-                                        s.Tag_ISO.toLowerCase().includes(filters.value.spool.search.toLowerCase());
+                let spools = db1.value.filter(s => {
+                    const matchSearch = s.Tag_Spool.toLowerCase().includes(debouncedFilters.value.spool.search.toLowerCase()) ||
+                                        s.Tag_ISO.toLowerCase().includes(debouncedFilters.value.spool.search.toLowerCase());
                     const matchArea = filters.value.spool.area === '' || s.Area === filters.value.spool.area;
+                    const matchSistema = filters.value.spool.sistema === '' || s.Sistema === filters.value.spool.sistema;
                     const matchStatus = filters.value.spool.status === '' || s.Estado_Fabrico === filters.value.spool.status;
-                    return matchSearch && matchArea && matchStatus;
+                    return matchSearch && matchArea && matchSistema && matchStatus;
                 });
+
+                if (sort.value.dashboard.key) {
+                    spools.sort((a, b) => {
+                        let valA = a[sort.value.dashboard.key];
+                        let valB = b[sort.value.dashboard.key];
+                        if (typeof valA === 'string') valA = valA.toLowerCase();
+                        if (typeof valB === 'string') valB = valB.toLowerCase();
+                        if (valA < valB) return sort.value.dashboard.order === 'asc' ? -1 : 1;
+                        if (valA > valB) return sort.value.dashboard.order === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return spools;
             });
-            const uniqueAreas = computed(() => [...new Set(db1.value.map(s => s.Area))]);
+            const paginatedSpools = computed(() => {
+                const start = (dashboardPage.value - 1) * dashboardPageSize;
+                return filteredSpools.value.slice(start, start + dashboardPageSize);
+            });
+            const uniqueAreas = computed(() => [...new Set(db1.value.map(s => s.Area))].filter(Boolean));
+            const uniqueSystems = computed(() => [...new Set(db1.value.map(s => s.Sistema))].filter(Boolean));
             const spoolsByStatus = computed(() => {
                 return db1.value.reduce((acc, s) => { acc[s.Estado_Fabrico] = (acc[s.Estado_Fabrico] || 0) + 1; return acc; }, {});
             });
@@ -809,7 +1019,25 @@
                     if (mov.Tipo_Movimento === 'SAIDA') ledger[mov.Codigo_SAP].out += Number(mov.Quantidade);
                     ledger[mov.Codigo_SAP].balance = ledger[mov.Codigo_SAP].in - ledger[mov.Codigo_SAP].out;
                 });
-                return Object.values(ledger).filter(item => item.sap.toLowerCase().includes(filters.value.logistics.search.toLowerCase()));
+                let list = Object.values(ledger).filter(item => item.sap.toLowerCase().includes(debouncedFilters.value.logistics.search.toLowerCase()));
+
+                if (sort.value.logistics.key) {
+                    list.sort((a, b) => {
+                        let valA = a[sort.value.logistics.key];
+                        let valB = b[sort.value.logistics.key];
+                        if (typeof valA === 'string') valA = valA.toLowerCase();
+                        if (typeof valB === 'string') valB = valB.toLowerCase();
+                        if (valA < valB) return sort.value.logistics.order === 'asc' ? -1 : 1;
+                        if (valA > valB) return sort.value.logistics.order === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return list;
+            });
+
+            const paginatedStockLedger = computed(() => {
+                const start = (logisticsPage.value - 1) * logisticsPageSize;
+                return stockLedger.value.slice(start, start + logisticsPageSize);
             });
 
             const getMissingStockForSpool = (tagSpool) => {
@@ -926,16 +1154,65 @@
                 } catch(e) {}
             };
 
+            const resetDashboardFilters = () => {
+                filters.value.spool.search = '';
+                filters.value.spool.area = '';
+                filters.value.spool.sistema = '';
+                filters.value.spool.status = '';
+                debouncedFilters.value.spool.search = '';
+            };
+
+            const selectDetailSpool = (spool) => {
+                selectedDetailSpool.value = spool;
+                detailForm.value.status = spool.Estado_Fabrico;
+                detailForm.value.notes = spool.Observacoes || '';
+                if (dashboardSplitRatio.value === 100) dashboardSplitRatio.value = 60; // Open panel
+            };
+            const closeDetailPanel = () => {
+                dashboardSplitRatio.value = 100;
+                selectedDetailSpool.value = null;
+            };
+
+            const updateDetailSpool = async () => {
+                if (!selectedDetailSpool.value) return;
+                try {
+                    if (!isOnline.value) { showToast('Operação cancelada. Sem ligação à rede.', 'error'); return; }
+
+                    showToast('A gravar alterações...', 'info');
+                    if (typeof google !== 'undefined' && google.script) {
+                        google.script.run.withSuccessHandler(res => {
+                            updateState(res);
+                            showToast('Spool atualizado com sucesso!', 'success');
+                            const updatedSpool = db1.value.find(s => s.Tag_Spool === selectedDetailSpool.value.Tag_Spool);
+                            if(updatedSpool) {
+                                selectedDetailSpool.value = updatedSpool;
+                                detailForm.value.status = updatedSpool.Estado_Fabrico;
+                            }
+                        }).withFailureHandler(err => {
+                            showToast(err.message || 'Erro a atualizar', 'error');
+                        }).updateSpoolDetails(selectedDetailSpool.value.Tag_Spool, detailForm.value.status, detailForm.value.notes);
+                    } else {
+                        setTimeout(() => showToast('Simulação local concluída', 'success'), 500);
+                    }
+                } catch(e) {}
+            };
+
+            const openJointModal = (spool) => { jointModal.value = { show: true, spool }; };
+            const closeJointModal = () => { jointModal.value = { show: false, spool: null }; };
+
             return {
                 loading, isOnline, activeModule, sidebarOpen, toasts, modal,
-                filters, selectedSpools, bulkStatusAction, statusList,
-                filteredSpools, uniqueAreas, spoolsByStatus, globalProgress,
+                filters, debouncedFilters, sort, paginatedSpools, paginatedStockLedger, dashboardPage, logisticsPage, dashboardPageSize, logisticsPageSize, sortBy,
+                selectedSpools, bulkStatusAction, statusList,
+                filteredSpools, uniqueAreas, uniqueSystems, spoolsByStatus, globalProgress,
                 selectedIsoForSpooling, uniqueIsos, spoolsForSelectedIso, mtoForSelectedIso, allocationForm, jointForm,
                 stockLedger, moveForm,
                 kioskSearch, kioskSpools, kioskJoints,
                 changeModule, toggleAllSpools, applyBulkStatus, getStatusBadgeClass, getBalançoMto, enforceNumber,
                 processAllocation, isSpoolFrozen, getAllocatedMaterials, getMissingStockForSpool, getJointsForSpool, processCreateJoint,
-                processMovement, kioskStartSpool, kioskFinishJoint, processDeallocate, processDeleteSpool, getHeatNumbersForSpool, revisionAlerts
+                processMovement, kioskStartSpool, kioskFinishJoint, processDeallocate, processDeleteSpool, getHeatNumbersForSpool, revisionAlerts,
+                splitRatio, dashboardSplitRatio, startDrag, startDashDrag, jointModal, openJointModal, closeJointModal,
+                resetDashboardFilters, selectedDetailSpool, detailForm, selectDetailSpool, closeDetailPanel, updateDetailSpool
             };
         }
     }).mount('#app');

@@ -204,6 +204,27 @@ function updateSpoolsStatus(spoolTags, newStatus) {
   return getInitialData();
 }
 
+function updateSpoolDetails(tagSpool, newStatus, newNotes) {
+  const ss = getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('DB_1_SpoolTracker_Definitivo');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+
+  const hTag = headers.indexOf('Tag_Spool');
+  const hStatus = headers.indexOf('Estado_Fabrico');
+  const hNotes = headers.indexOf('Observacoes');
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][hTag] == tagSpool) {
+      sheet.getRange(i + 1, hStatus + 1).setValue(newStatus);
+      sheet.getRange(i + 1, hNotes + 1).setValue(newNotes);
+      logAction("Atualização de Detalhes", tagSpool, `Estado: ${newStatus} | Notas atualizadas.`);
+      break;
+    }
+  }
+  return getInitialData();
+}
+
 function finishJointKiosk(jointId, tagSpool) {
   const ss = getActiveSpreadsheet();
   const sheet = ss.getSheetByName('DB_2_WeldingMap_NDT');

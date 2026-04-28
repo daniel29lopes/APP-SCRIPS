@@ -12,6 +12,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
         tailwind.config = {
@@ -155,11 +156,11 @@
                     <i data-lucide="box" class="w-6 h-6"></i>
                     <h3 class="text-lg font-bold">Digital Twin 3D - {{ twinModal.spoolTag }}</h3>
                 </div>
-                <button @click="closeTwinModal" class="text-slate-400 hover:text-white transition">
+                <button @click="closeTwinModal" class="text-slate-400 hover:text-white transition z-[100] pointer-events-auto">
                     <i data-lucide="x" class="w-6 h-6"></i>
                 </button>
             </div>
-            <div id="three-container" class="flex-1 w-full h-full bg-slate-900 rounded-lg overflow-hidden relative cursor-crosshair">
+            <div id="three-container" ref="threeContainerRef" class="flex-1 w-full h-full bg-slate-900 rounded-lg overflow-hidden relative cursor-crosshair">
                 <div class="absolute bottom-4 left-4 text-xs text-white/50 bg-black/50 p-2 rounded pointer-events-none">
                     Rodar: Clique Esquerdo + Arrastar | Zoom: Scroll
                 </div>
@@ -468,13 +469,17 @@
                     <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center flex-wrap gap-2">
                         <span>Material Take-Off (MTO)</span>
                         <div class="flex items-center gap-2 ml-auto">
+                            <button v-if="allocationQueue.length > 0" @click="saveAllocations" class="bg-success hover:bg-emerald-500 text-white font-bold py-1 px-3 rounded shadow transition flex items-center gap-1 text-xs">
+                                <i data-lucide="save" class="w-3 h-3"></i> Guardar ({{ allocationQueue.length }})
+                            </button>
+
                             <!-- Bulk Allocation UI -->
                             <div class="flex gap-1 items-center bg-slate-900 border border-slate-700 rounded px-2 py-1" v-if="mtoForSelectedIso.length > 0">
                                 <select v-model="bulkAllocTarget" class="bg-transparent text-xs text-white focus:outline-none w-24">
                                     <option value="">Spool...</option>
                                     <option v-for="spool in spoolsForSelectedIso" :value="spool.Tag_Spool">{{ spool.Tag_Spool }}</option>
                                 </select>
-                                <button @click="processBulkAllocation" :disabled="!bulkAllocTarget || !isOnline" class="text-primary hover:text-blue-400 disabled:opacity-50" title="Alocar TODO o saldo disponível">
+                                <button @click="processBulkAllocation" :disabled="!bulkAllocTarget" class="text-primary hover:text-blue-400 disabled:opacity-50" title="Alocar TODO o saldo disponível">
                                     <i data-lucide="arrow-right-square" class="w-4 h-4"></i>
                                 </button>
                             </div>
@@ -531,7 +536,7 @@
                                     </div>
                                     <div class="flex gap-1">
                                         <button @click="allocationForm[item.Item_No].qty = Math.max(0, getBalançoMto(item))" class="bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 rounded px-2 py-1.5 transition" title="Máx">MÁX</button>
-                                        <button @click="processAllocation(item)" class="bg-primary hover:bg-blue-600 text-white rounded p-1.5 transition disabled:opacity-50" :disabled="!allocationForm[item.Item_No].spool || !allocationForm[item.Item_No].qty || allocationForm[item.Item_No].qty <= 0 || !isOnline" title="Alocar">
+                                        <button @click="processAllocation(item)" class="bg-primary hover:bg-blue-600 text-white rounded p-1.5 transition disabled:opacity-50" :disabled="!allocationForm[item.Item_No].spool || !allocationForm[item.Item_No].qty || allocationForm[item.Item_No].qty <= 0" title="Alocar para Fila">
                                             <i data-lucide="arrow-right" class="w-4 h-4"></i>
                                         </button>
                                     </div>
@@ -1187,12 +1192,43 @@
                 } catch(e) {}
             };
 
-            const processAllocation = async (item) => {
+            const allocationQueue = ref([]);
+
+            const processAllocation = (item) => {
                 const form = allocationForm.value[item.Item_No];
+
+                // Add to offline queue to visually reflect change instantly before backend save
+                allocationQueue.value.push({
+                    tagIso: item.Tag_ISO,
+                    itemNo: item.Item_No,
+                    tagSpool: form.spool,
+                    qty: form.qty,
+                    destination: form.dest
+                });
+                showToast(`Material em fila para gravar (${allocationQueue.value.length})`, 'info');
+                form.qty = ''; // Reset input
+            };
+
+            const saveAllocations = async () => {
+                if (allocationQueue.value.length === 0) return;
                 try {
-                    await runBackend('allocateMaterial', item.Tag_ISO, item.Item_No, form.spool, form.qty, form.dest);
-                    showToast('Material alocado', 'success');
-                    form.qty = ''; // Reset input
+                    const payload = [...allocationQueue.value];
+                    allocationQueue.value = []; // clear queue eagerly
+
+                    // Call the bulk endpoint
+                    showToast('A gravar alocações...', 'info');
+                    if (typeof google !== 'undefined' && google.script) {
+                        google.script.run.withSuccessHandler(res => {
+                            updateState(res);
+                            showToast('Alocações gravadas com sucesso!', 'success');
+                        }).withFailureHandler(err => {
+                            showToast(err.message || 'Erro a gravar alocações', 'error');
+                            // Revert queue on failure
+                            allocationQueue.value = [...payload, ...allocationQueue.value];
+                        }).bulkAllocateMaterials(payload);
+                    } else {
+                        setTimeout(() => showToast('Simulação local concluída', 'success'), 500);
+                    }
                 } catch(e) {}
             };
 
@@ -1220,14 +1256,19 @@
                 } catch(err) { console.error('Drop error', err); }
             };
 
-            const processDragAllocation = async () => {
+            const processDragAllocation = () => {
                 if(!dragModal.value.item) return;
-                try {
-                    // Let the backend validate or over-allocate safely
-                    await runBackend('allocateMaterial', dragModal.value.item.Tag_ISO, dragModal.value.item.Item_No, dragModal.value.spoolTag, dragModal.value.qty, dragModal.value.dest);
-                    showToast('Material alocado com sucesso', 'success');
-                    dragModal.value.show = false;
-                } catch(e) {}
+
+                allocationQueue.value.push({
+                    tagIso: dragModal.value.item.Tag_ISO,
+                    itemNo: dragModal.value.item.Item_No,
+                    tagSpool: dragModal.value.spoolTag,
+                    qty: dragModal.value.qty,
+                    destination: dragModal.value.dest
+                });
+
+                showToast(`Material arrastado em fila para gravar (${allocationQueue.value.length})`, 'info');
+                dragModal.value.show = false;
             };
 
             const processBulkAllocation = async () => {
@@ -1247,8 +1288,9 @@
                         qty: getBalançoMto(item),
                         destination: 'SHOP'
                     }));
-                    await runBackend('bulkAllocateMaterials', allocations);
-                    showToast('Bulk allocation concluída!', 'success');
+
+                    allocationQueue.value.push(...allocations);
+                    showToast(`Adicionados ${allocations.length} itens à fila para gravar.`, 'info');
                 } catch(e) {}
             };
 
@@ -1367,17 +1409,18 @@
                 nextTick(() => { initThreeJS(spool); });
             };
 
+            const threeContainerRef = ref(null);
+
             const closeTwinModal = () => {
-                twinModal.value = { show: false, spoolTag: '' };
                 if (animationFrameId) cancelAnimationFrame(animationFrameId);
                 if (threeRenderer) {
                     threeRenderer.dispose();
-                    document.getElementById('three-container').innerHTML = '';
                 }
+                twinModal.value = { show: false, spoolTag: '' };
             };
 
             const initThreeJS = (spool) => {
-                const container = document.getElementById('three-container');
+                const container = threeContainerRef.value;
                 if (!container) return;
 
                 threeScene = new THREE.Scene();
@@ -1403,24 +1446,63 @@
                 const objects = [];
 
                 materials.forEach((mat, index) => {
-                    const isPipe = (mat.Unidade || '').toUpperCase().includes('M');
-                    const geometry = isPipe ? new THREE.CylinderGeometry(0.5, 0.5, 3, 32) : new THREE.CylinderGeometry(0.8, 0.8, 0.5, 32);
-                    if (isPipe) geometry.rotateZ(Math.PI / 2);
-                    else geometry.rotateZ(Math.PI / 2);
+                    const desc = (mat.Descricao_Material || '').toUpperCase();
+                    const unit = (mat.Unidade || '').toUpperCase();
 
-                    const mesh = new THREE.Mesh(geometry, isPipe ? pipeMaterial : flangeMaterial);
+                    let isPipe = false;
+                    let itemWidth = 0.5; // default for flange
+                    let mesh;
+
+                    if (desc.includes('CURVA') || desc.includes('ELBOW') || desc.includes('COTOVELO')) {
+                        const geometry = new THREE.TorusGeometry(1, 0.5, 16, 32, Math.PI / 2);
+                        mesh = new THREE.Mesh(geometry, flangeMaterial);
+                        itemWidth = 2; // radius * 2
+                    } else if (desc.includes('TÊ') || desc.includes('TEE') || desc.includes('TE ')) {
+                        mesh = new THREE.Group();
+                        const baseGeo = new THREE.CylinderGeometry(0.5, 0.5, 2, 32);
+                        const baseMesh = new THREE.Mesh(baseGeo, flangeMaterial);
+                        const branchGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+                        const branchMesh = new THREE.Mesh(branchGeo, flangeMaterial);
+                        branchMesh.position.x = 0.5;
+                        branchMesh.rotation.z = Math.PI / 2;
+                        mesh.add(baseMesh);
+                        mesh.add(branchMesh);
+                        itemWidth = 2;
+                    } else if (desc.includes('FLANGE')) {
+                        const geometry = new THREE.CylinderGeometry(0.8, 0.8, 0.5, 32);
+                        geometry.rotateZ(Math.PI / 2);
+                        mesh = new THREE.Mesh(geometry, flangeMaterial);
+                        itemWidth = 0.5;
+                    } else if (unit.includes('M') || desc.includes('TUBO') || desc.includes('PIPE')) {
+                        isPipe = true;
+                        const geometry = new THREE.CylinderGeometry(0.5, 0.5, 3, 32);
+                        geometry.rotateZ(Math.PI / 2);
+                        mesh = new THREE.Mesh(geometry, pipeMaterial);
+                        itemWidth = 3;
+                    } else {
+                        // Default Fallback
+                        const geometry = new THREE.CylinderGeometry(0.6, 0.6, 1, 32);
+                        mesh = new THREE.Mesh(geometry, flangeMaterial);
+                        itemWidth = 1;
+                    }
+
                     mesh.position.x = offsetX;
-                    mesh.userData = { isMaterial: true, itemNo: mat.Item_No };
+                    // Provide interaction data to the mesh or group children
+                    if(mesh.isGroup) {
+                        mesh.children.forEach(c => c.userData = { isMaterial: true, itemNo: mat.Item_No });
+                    } else {
+                        mesh.userData = { isMaterial: true, itemNo: mat.Item_No };
+                    }
                     threeScene.add(mesh);
 
                     if (index < materials.length - 1) {
                         const jointGeo = new THREE.SphereGeometry(0.6, 32, 32);
                         const jointMesh = new THREE.Mesh(jointGeo, jointMaterial);
-                        jointMesh.position.x = offsetX + (isPipe ? 1.5 : 0.25) + 0.5; // mid point rough approx
+                        jointMesh.position.x = offsetX + (itemWidth / 2) + 0.5; // middle space
                         jointMesh.userData = { isJoint: true, compA: mat.Item_No, compB: materials[index+1].Item_No, spool: spool };
                         threeScene.add(jointMesh);
                         objects.push(jointMesh);
-                        offsetX += (isPipe ? 3 : 0.5) + 1;
+                        offsetX += itemWidth + 1;
                     }
                 });
 
@@ -1428,31 +1510,22 @@
                 threeCamera.position.y = 2;
                 threeCamera.lookAt(0, 0, 0);
 
-                let isDragging = false;
-                let previousMousePosition = { x: 0, y: 0 };
-
-                container.addEventListener('mousedown', (e) => {
-                    isDragging = true;
-                });
-                container.addEventListener('mousemove', (e) => {
-                    if (isDragging) {
-                        const deltaMove = { x: e.offsetX - previousMousePosition.x, y: e.offsetY - previousMousePosition.y };
-                        threeScene.rotation.y += deltaMove.x * 0.01;
-                        threeScene.rotation.x += deltaMove.y * 0.01;
-                    }
-                    previousMousePosition = { x: e.offsetX, y: e.offsetY };
-                });
-                container.addEventListener('mouseup', () => { isDragging = false; });
-                container.addEventListener('wheel', (e) => {
-                    threeCamera.position.z += e.deltaY * 0.01;
-                });
+                const controls = new THREE.OrbitControls(threeCamera, threeRenderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
 
                 // Raycaster for Joint clicks
                 const raycaster = new THREE.Raycaster();
                 const mouse = new THREE.Vector2();
+                let dragTimeout;
 
-                container.addEventListener('click', (e) => {
-                    if(isDragging) return; // prevent click if it was a drag
+                container.addEventListener('mousedown', () => {
+                    dragTimeout = setTimeout(() => { dragTimeout = 'drag'; }, 150); // distinguish click vs drag
+                });
+
+                container.addEventListener('mouseup', (e) => {
+                    if(dragTimeout === 'drag') return; // ignore if it was a drag
+                    clearTimeout(dragTimeout);
                     const rect = threeRenderer.domElement.getBoundingClientRect();
                     mouse.x = ( ( e.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
                     mouse.y = - ( ( e.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
@@ -1471,6 +1544,7 @@
 
                 const animate = function () {
                     animationFrameId = requestAnimationFrame(animate);
+                    controls.update();
                     threeRenderer.render(threeScene, threeCamera);
                 };
                 animate();
@@ -1490,7 +1564,7 @@
                 splitRatio, dashboardSplitRatio, startDrag, startDashDrag, jointModal, openJointModal, closeJointModal,
                 resetDashboardFilters, selectedDetailSpool, detailForm, selectDetailSpool, closeDetailPanel, updateDetailSpool,
                 dragModal, dragOverSpool, bulkAllocTarget, onDragStart, onDragOver, onDragLeave, onDrop, processDragAllocation, processBulkAllocation,
-                twinModal, openTwinModal, closeTwinModal
+                twinModal, openTwinModal, closeTwinModal, threeContainerRef, allocationQueue, saveAllocations
             };
         }
     }).mount('#app');

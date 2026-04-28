@@ -561,14 +561,14 @@
                                         <h3 class="font-bold text-white text-lg">{{ spool.Tag_Spool }}</h3>
                                         <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico }}</span>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <button @click="openTwinModal(spool)" class="text-slate-400 hover:text-primary transition flex items-center gap-1 text-xs font-semibold bg-slate-900/50 px-2 py-1 rounded" title="Visualizador 3D">
+                                    <div class="flex gap-2 pointer-events-auto">
+                                        <button @click="openTwinModal(spool)" class="text-slate-400 hover:text-primary transition flex items-center gap-1 text-xs font-semibold bg-slate-900/50 px-2 py-1 rounded pointer-events-auto" title="Visualizador 3D">
                                             <i data-lucide="box" class="w-3 h-3"></i> 3D
                                         </button>
                                         <div v-if="isSpoolFrozen(spool.Estado_Fabrico)" class="text-xs flex items-center text-accent bg-accent/10 px-2 py-1 rounded border border-accent/20">
                                             <i data-lucide="lock" class="w-3 h-3 mr-1"></i> Freeze
                                         </div>
-                                        <button v-if="!isSpoolFrozen(spool.Estado_Fabrico)" @click="processDeleteSpool(spool)" class="text-slate-500 hover:text-danger opacity-0 group-hover:opacity-100 transition" title="Apagar Spool">
+                                        <button v-if="!isSpoolFrozen(spool.Estado_Fabrico)" @click="processDeleteSpool(spool)" class="text-slate-500 hover:text-danger opacity-0 group-hover:opacity-100 transition pointer-events-auto" title="Apagar Spool">
                                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                                         </button>
                                     </div>
@@ -1066,6 +1066,11 @@
                 return db3.value.filter(i => i.Tag_ISO === selectedIsoForSpooling.value && (!i.Tag_Spool || i.Tag_Spool === ''));
             });
 
+            const parseSafeNumber = (val) => {
+                if (val === undefined || val === null || val === '') return 0;
+                return parseFloat(String(val).replace(',', '.')) || 0;
+            };
+
             const revisionAlerts = computed(() => {
                 const alerts = [];
                 if (!selectedIsoForSpooling.value) return alerts;
@@ -1085,8 +1090,8 @@
             const getBalançoMto = (item) => {
                 // Find all allocated lines for this ISO and Item_No
                 const allocatedLines = db3.value.filter(i => i.Tag_ISO === item.Tag_ISO && i.Item_No === item.Item_No && i.Tag_Spool !== '');
-                const totalAllocated = allocatedLines.reduce((sum, line) => sum + Number(line.Qtd_Alocada), 0);
-                return Number(item.Qtd_Desenhada) - totalAllocated;
+                const totalAllocated = allocatedLines.reduce((sum, line) => sum + parseSafeNumber(line.Qtd_Alocada), 0);
+                return parseSafeNumber(item.Qtd_Desenhada) - totalAllocated;
             };
 
             const getAllocatedMaterials = (tagSpool) => {
@@ -1108,8 +1113,8 @@
                     if (!ledger[mov.Codigo_SAP]) {
                         ledger[mov.Codigo_SAP] = { sap: mov.Codigo_SAP, desc: mov.Descricao_Material || 'N/A', in: 0, out: 0, balance: 0 };
                     }
-                    if (mov.Tipo_Movimento === 'ENTRADA') ledger[mov.Codigo_SAP].in += Number(mov.Quantidade);
-                    if (mov.Tipo_Movimento === 'SAIDA') ledger[mov.Codigo_SAP].out += Number(mov.Quantidade);
+                    if (mov.Tipo_Movimento === 'ENTRADA') ledger[mov.Codigo_SAP].in += parseSafeNumber(mov.Quantidade);
+                    if (mov.Tipo_Movimento === 'SAIDA') ledger[mov.Codigo_SAP].out += parseSafeNumber(mov.Quantidade);
                     ledger[mov.Codigo_SAP].balance = ledger[mov.Codigo_SAP].in - ledger[mov.Codigo_SAP].out;
                 });
                 let list = Object.values(ledger).filter(item => item.sap.toLowerCase().includes(debouncedFilters.value.logistics.search.toLowerCase()));
@@ -1138,7 +1143,7 @@
                 // Sum what is needed
                 getAllocatedMaterials(tagSpool).forEach(mat => {
                     if(!mat.Codigo_SAP) return;
-                    needed[mat.Codigo_SAP] = (needed[mat.Codigo_SAP] || 0) + Number(mat.Qtd_Alocada);
+                    needed[mat.Codigo_SAP] = (needed[mat.Codigo_SAP] || 0) + parseSafeNumber(mat.Qtd_Alocada);
                 });
 
                 const missing = [];

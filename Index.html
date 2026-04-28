@@ -10,6 +10,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
         tailwind.config = {
@@ -104,6 +106,63 @@
             <div class="flex justify-end gap-3">
                 <button @click="modal.show = false; modal.reject()" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition text-white text-sm font-medium">Cancelar</button>
                 <button @click="modal.show = false; modal.resolve()" class="px-4 py-2 rounded bg-danger hover:bg-red-600 transition text-white text-sm font-medium shadow-lg shadow-red-500/20">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- D&D ALLOCATION MODAL -->
+    <div v-if="dragModal.show" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="glass-panel rounded-xl p-6 max-w-sm w-full shadow-2xl border border-slate-700 m-4">
+            <div class="flex items-center gap-3 mb-4 text-primary border-b border-slate-700 pb-3">
+                <i data-lucide="package-plus" class="w-6 h-6"></i>
+                <h3 class="text-lg font-bold">Alocar ao {{ dragModal.spoolTag }}</h3>
+            </div>
+
+            <div class="mb-4 text-sm text-slate-300 bg-slate-900/50 p-3 rounded">
+                <p><strong>Item:</strong> {{ dragModal.item.Item_No }} - {{ dragModal.item.Descricao_Material }}</p>
+                <p class="text-xs text-slate-400 mt-1">Balanço Disponível: <span class="font-bold text-white">{{ getBalançoMto(dragModal.item) }} {{ dragModal.item.Unidade }}</span></p>
+            </div>
+
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">Quantidade</label>
+                    <div class="flex gap-2">
+                        <input type="number" :step="['UN', 'PC', 'EA'].includes(dragModal.item.Unidade?.toUpperCase()) ? '1' : '0.01'" v-model.number="dragModal.qty" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        <button @click="dragModal.qty = Math.max(0, getBalançoMto(dragModal.item))" class="bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 rounded px-3 transition">MÁX</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-500 font-semibold mb-1 block">Destino</label>
+                    <select v-model="dragModal.dest" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        <option value="SHOP">SHOP</option>
+                        <option value="FIELD">FIELD</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button @click="dragModal.show = false" class="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition text-white text-sm font-medium">Cancelar</button>
+                <button @click="processDragAllocation()" class="px-6 py-2 rounded bg-primary hover:bg-blue-600 transition text-white text-sm font-medium shadow-lg shadow-primary/20" :disabled="!dragModal.qty || dragModal.qty <= 0">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D DIGITAL TWIN MODAL -->
+    <div v-if="twinModal.show" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md">
+        <div class="glass-panel rounded-xl p-4 w-11/12 h-5/6 flex flex-col shadow-2xl border border-slate-700 m-4 relative">
+            <div class="flex items-center justify-between mb-4 border-b border-slate-700 pb-3">
+                <div class="flex items-center gap-3 text-primary">
+                    <i data-lucide="box" class="w-6 h-6"></i>
+                    <h3 class="text-lg font-bold">Digital Twin 3D - {{ twinModal.spoolTag }}</h3>
+                </div>
+                <button @click="closeTwinModal" class="text-slate-400 hover:text-white transition">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="three-container" class="flex-1 w-full h-full bg-slate-900 rounded-lg overflow-hidden relative cursor-crosshair">
+                <div class="absolute bottom-4 left-4 text-xs text-white/50 bg-black/50 p-2 rounded pointer-events-none">
+                    Rodar: Clique Esquerdo + Arrastar | Zoom: Scroll
+                </div>
             </div>
         </div>
     </div>
@@ -403,12 +462,28 @@
                 <p>Selecione uma Isométrica no topo para começar.</p>
             </div>
 
-            <div v-else class="flex-1 flex overflow-hidden">
+            <div v-else class="flex-1 flex overflow-hidden relative">
                 <!-- Left: MTO (BOM) -->
-                <div class="w-1/2 border-r border-slate-800 flex flex-col bg-surface/30">
-                    <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center">
+                <div class="flex flex-col bg-surface/30 transition-all duration-300" :style="{ width: splitRatio + '%' }">
+                    <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center flex-wrap gap-2">
                         <span>Material Take-Off (MTO)</span>
-                        <span class="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">ISO: {{ selectedIsoForSpooling }}</span>
+                        <div class="flex items-center gap-2 ml-auto">
+                            <!-- Bulk Allocation UI -->
+                            <div class="flex gap-1 items-center bg-slate-900 border border-slate-700 rounded px-2 py-1" v-if="mtoForSelectedIso.length > 0">
+                                <select v-model="bulkAllocTarget" class="bg-transparent text-xs text-white focus:outline-none w-24">
+                                    <option value="">Spool...</option>
+                                    <option v-for="spool in spoolsForSelectedIso" :value="spool.Tag_Spool">{{ spool.Tag_Spool }}</option>
+                                </select>
+                                <button @click="processBulkAllocation" :disabled="!bulkAllocTarget || !isOnline" class="text-primary hover:text-blue-400 disabled:opacity-50" title="Alocar TODO o saldo disponível">
+                                    <i data-lucide="arrow-right-square" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+
+                            <span class="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">ISO: {{ selectedIsoForSpooling }}</span>
+                            <button @click="splitRatio = splitRatio === 100 ? 50 : 100" class="text-slate-400 hover:text-white" title="Maximizar MTO">
+                                <i :data-lucide="splitRatio === 100 ? 'minimize-2' : 'maximize-2'" class="w-4 h-4"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex-1 overflow-auto p-4 custom-scrollbar">
                         <div v-if="revisionAlerts.length > 0" class="mb-4 space-y-2">
@@ -417,7 +492,7 @@
                              </div>
                         </div>
                         <div class="flex flex-col gap-3">
-                            <div v-for="item in mtoForSelectedIso" :key="item.Item_No" class="bg-slate-800 border border-slate-700 rounded-lg p-3 hover-lift shadow-sm">
+                            <div v-for="item in mtoForSelectedIso" :key="item.Item_No" class="bg-slate-800 border border-slate-700 rounded-lg p-3 hover-lift shadow-sm cursor-grab" draggable="true" @dragstart="onDragStart($event, item)">
                                 <div class="flex justify-between items-start mb-2">
                                     <div class="flex gap-2 items-center">
                                         <span class="bg-primary/20 text-primary text-xs font-bold px-2 py-0.5 rounded">Item {{ item.Item_No }}</span>
@@ -434,7 +509,8 @@
                                 </div>
 
                                 <!-- Allocation Form -->
-                                <div class="mt-2 pt-3 border-t border-slate-700 flex flex-wrap gap-2 items-end" v-if="getBalançoMto(item) > 0">
+                                <div class="mt-2 pt-3 border-t border-slate-700 flex flex-wrap gap-2 items-end">
+                                    <div v-if="getBalançoMto(item) < 0" class="w-full mb-2 text-danger text-[10px] font-bold uppercase"><i data-lucide="alert-circle" class="w-3 h-3 inline mr-1"></i>Over-allocation detetado</div>
                                     <div class="flex-1 min-w-[120px]">
                                         <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Para Spool</label>
                                         <select v-model="allocationForm[item.Item_No].spool" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary">
@@ -444,7 +520,7 @@
                                     </div>
                                     <div class="w-20">
                                         <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Qtd</label>
-                                        <input type="number" step="0.01" v-model.number="allocationForm[item.Item_No].qty" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary" @input="enforceNumber(item.Item_No, getBalançoMto(item))">
+                                        <input type="number" :step="['UN', 'PC', 'EA'].includes(item.Unidade?.toUpperCase()) ? '1' : '0.01'" v-model.number="allocationForm[item.Item_No].qty" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary" @input="enforceNumber(item.Item_No, item.Unidade)">
                                     </div>
                                     <div class="w-24">
                                         <label class="text-[10px] uppercase text-slate-500 font-semibold mb-1 block">Destino</label>
@@ -454,7 +530,7 @@
                                         </select>
                                     </div>
                                     <div class="flex gap-1">
-                                        <button @click="allocationForm[item.Item_No].qty = getBalançoMto(item)" class="bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 rounded px-2 py-1.5 transition" title="Máx">MÁX</button>
+                                        <button @click="allocationForm[item.Item_No].qty = Math.max(0, getBalançoMto(item))" class="bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 rounded px-2 py-1.5 transition" title="Máx">MÁX</button>
                                         <button @click="processAllocation(item)" class="bg-primary hover:bg-blue-600 text-white rounded p-1.5 transition disabled:opacity-50" :disabled="!allocationForm[item.Item_No].spool || !allocationForm[item.Item_No].qty || allocationForm[item.Item_No].qty <= 0 || !isOnline" title="Alocar">
                                             <i data-lucide="arrow-right" class="w-4 h-4"></i>
                                         </button>
@@ -465,23 +541,32 @@
                     </div>
                 </div>
 
+                <!-- Splitter -->
+                <div class="w-1 bg-slate-800 cursor-col-resize hover:bg-primary transition-colors flex-shrink-0 z-20" @mousedown="startDrag"></div>
+
                 <!-- Right: Spools & Joints -->
-                <div class="w-1/2 flex flex-col bg-surface/10">
+                <div class="flex flex-col bg-surface/10 transition-all duration-300" :style="{ width: (100 - splitRatio) + '%' }" v-show="splitRatio < 100">
                     <div class="p-3 bg-slate-800/50 border-b border-slate-800 text-sm font-semibold text-slate-200 flex justify-between items-center">
                         <span>Spools & Juntas</span>
+                        <button @click="splitRatio = splitRatio === 0 ? 50 : 0" class="text-slate-400 hover:text-white" title="Maximizar Spools">
+                            <i :data-lucide="splitRatio === 0 ? 'minimize-2' : 'maximize-2'" class="w-4 h-4"></i>
+                        </button>
                     </div>
                     <div class="flex-1 overflow-auto p-4 custom-scrollbar">
                         <div class="grid grid-cols-1 gap-4">
-                            <div v-for="spool in spoolsForSelectedIso" :key="spool.Tag_Spool" class="bg-surface border border-slate-700 rounded-xl overflow-hidden shadow-lg">
+                            <div v-for="spool in spoolsForSelectedIso" :key="spool.Tag_Spool" class="bg-surface border border-slate-700 rounded-xl overflow-hidden shadow-lg transition-colors border-2" :class="dragOverSpool === spool.Tag_Spool ? 'border-primary bg-primary/10' : 'border-transparent'" @dragover.prevent="onDragOver($event, spool)" @dragleave="onDragLeave" @drop="onDrop($event, spool)">
                                 <!-- Spool Header -->
-                                <div class="bg-slate-800/80 px-4 py-3 flex justify-between items-center border-b border-slate-700 group">
+                                <div class="bg-slate-800/80 px-4 py-3 flex justify-between items-center border-b border-slate-700 group pointer-events-none">
                                     <div>
                                         <h3 class="font-bold text-white text-lg">{{ spool.Tag_Spool }}</h3>
                                         <span :class="getStatusBadgeClass(spool.Estado_Fabrico)">{{ spool.Estado_Fabrico }}</span>
                                     </div>
                                     <div class="flex gap-2">
+                                        <button @click="openTwinModal(spool)" class="text-slate-400 hover:text-primary transition flex items-center gap-1 text-xs font-semibold bg-slate-900/50 px-2 py-1 rounded" title="Visualizador 3D">
+                                            <i data-lucide="box" class="w-3 h-3"></i> 3D
+                                        </button>
                                         <div v-if="isSpoolFrozen(spool.Estado_Fabrico)" class="text-xs flex items-center text-accent bg-accent/10 px-2 py-1 rounded border border-accent/20">
-                                            <i data-lucide="lock" class="w-3 h-3 mr-1"></i> Freeze Mode
+                                            <i data-lucide="lock" class="w-3 h-3 mr-1"></i> Freeze
                                         </div>
                                         <button v-if="!isSpoolFrozen(spool.Estado_Fabrico)" @click="processDeleteSpool(spool)" class="text-slate-500 hover:text-danger opacity-0 group-hover:opacity-100 transition" title="Apagar Spool">
                                             <i data-lucide="trash-2" class="w-4 h-4"></i>
@@ -698,9 +783,14 @@
             let toastId = 0;
             const modal = ref({ show: false, title: '', message: '', resolve: null, reject: null });
             const jointModal = ref({ show: false, spool: null });
+            const dragModal = ref({ show: false, item: null, spoolTag: '', qty: '', dest: 'SHOP' });
+            const twinModal = ref({ show: false, spoolTag: '' });
 
             const selectedDetailSpool = ref(null);
             const detailForm = ref({ status: '', notes: '' });
+
+            const dragOverSpool = ref('');
+            const bulkAllocTarget = ref('');
 
             // Data
             const db1 = shallowRef([]);
@@ -919,11 +1009,14 @@
                 }
             };
 
-            const enforceNumber = (itemNo, max) => {
+            const enforceNumber = (itemNo, unit) => {
                 let val = allocationForm.value[itemNo].qty;
                 if (typeof val === 'string') val = parseFloat(val.replace(',', '.'));
                 if (isNaN(val) || val < 0) val = 0;
-                if (val > max) val = max;
+                // Smart Units: Force integers for discrete units
+                const isDiscrete = ['UN', 'PC', 'EA'].includes((unit || '').toUpperCase());
+                if (isDiscrete) val = Math.floor(val);
+
                 allocationForm.value[itemNo].qty = val;
             };
 
@@ -1098,6 +1191,62 @@
                 } catch(e) {}
             };
 
+            const onDragStart = (e, item) => {
+                e.dataTransfer.setData('application/json', JSON.stringify(item));
+                e.dataTransfer.effectAllowed = 'copy';
+            };
+            const onDragOver = (e, spool) => {
+                if(isSpoolFrozen(spool.Estado_Fabrico)) return;
+                dragOverSpool.value = spool.Tag_Spool;
+            };
+            const onDragLeave = () => { dragOverSpool.value = ''; };
+            const onDrop = (e, spool) => {
+                dragOverSpool.value = '';
+                if(isSpoolFrozen(spool.Estado_Fabrico)) return;
+                try {
+                    const itemData = JSON.parse(e.dataTransfer.getData('application/json'));
+                    dragModal.value = {
+                        show: true,
+                        item: itemData,
+                        spoolTag: spool.Tag_Spool,
+                        qty: '',
+                        dest: 'SHOP'
+                    };
+                } catch(err) { console.error('Drop error', err); }
+            };
+
+            const processDragAllocation = async () => {
+                if(!dragModal.value.item) return;
+                try {
+                    // Let the backend validate or over-allocate safely
+                    await runBackend('allocateMaterial', dragModal.value.item.Tag_ISO, dragModal.value.item.Item_No, dragModal.value.spoolTag, dragModal.value.qty, dragModal.value.dest);
+                    showToast('Material alocado com sucesso', 'success');
+                    dragModal.value.show = false;
+                } catch(e) {}
+            };
+
+            const processBulkAllocation = async () => {
+                if (!bulkAllocTarget.value) return;
+                const itemsToAllocate = mtoForSelectedIso.value.filter(item => getBalançoMto(item) > 0);
+                if (itemsToAllocate.length === 0) {
+                    showToast('Nenhum saldo disponível para transferir.', 'info');
+                    return;
+                }
+
+                try {
+                    await confirmAction('Alocação em Massa', `Vai transferir TODOS os saldos disponíveis para o Spool ${bulkAllocTarget.value}. Confirma?`);
+                    const allocations = itemsToAllocate.map(item => ({
+                        tagIso: item.Tag_ISO,
+                        itemNo: item.Item_No,
+                        tagSpool: bulkAllocTarget.value,
+                        qty: getBalançoMto(item),
+                        destination: 'SHOP'
+                    }));
+                    await runBackend('bulkAllocateMaterials', allocations);
+                    showToast('Bulk allocation concluída!', 'success');
+                } catch(e) {}
+            };
+
             const processCreateJoint = async (spool) => {
                 const form = jointForm.value[spool.Tag_Spool];
                 const jointData = {
@@ -1197,8 +1346,130 @@
                 } catch(e) {}
             };
 
-            const openJointModal = (spool) => { jointModal.value = { show: true, spool }; };
+            const openJointModal = (spool, prefillA = '', prefillB = '') => {
+                jointModal.value = { show: true, spool };
+                if (prefillA || prefillB) {
+                    jointForm.value[spool.Tag_Spool].compA = prefillA;
+                    jointForm.value[spool.Tag_Spool].compB = prefillB;
+                }
+            };
             const closeJointModal = () => { jointModal.value = { show: false, spool: null }; };
+
+            let threeScene, threeCamera, threeRenderer, animationFrameId;
+
+            const openTwinModal = (spool) => {
+                twinModal.value = { show: true, spoolTag: spool.Tag_Spool };
+                nextTick(() => { initThreeJS(spool); });
+            };
+
+            const closeTwinModal = () => {
+                twinModal.value = { show: false, spoolTag: '' };
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                if (threeRenderer) {
+                    threeRenderer.dispose();
+                    document.getElementById('three-container').innerHTML = '';
+                }
+            };
+
+            const initThreeJS = (spool) => {
+                const container = document.getElementById('three-container');
+                if (!container) return;
+
+                threeScene = new THREE.Scene();
+                threeCamera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+                threeRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+
+                threeRenderer.setSize(container.clientWidth, container.clientHeight);
+                container.appendChild(threeRenderer.domElement);
+
+                const ambientLight = new THREE.AmbientLight(0x404040, 2);
+                threeScene.add(ambientLight);
+                const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+                dirLight.position.set(5, 5, 5);
+                threeScene.add(dirLight);
+
+                const materials = getAllocatedMaterials(spool.Tag_Spool);
+                let offsetX = - (materials.length * 2) / 2;
+
+                const pipeMaterial = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 });
+                const flangeMaterial = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.1 });
+                const jointMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.5 });
+
+                const objects = [];
+
+                materials.forEach((mat, index) => {
+                    const isPipe = (mat.Unidade || '').toUpperCase().includes('M');
+                    const geometry = isPipe ? new THREE.CylinderGeometry(0.5, 0.5, 3, 32) : new THREE.CylinderGeometry(0.8, 0.8, 0.5, 32);
+                    if (isPipe) geometry.rotateZ(Math.PI / 2);
+                    else geometry.rotateZ(Math.PI / 2);
+
+                    const mesh = new THREE.Mesh(geometry, isPipe ? pipeMaterial : flangeMaterial);
+                    mesh.position.x = offsetX;
+                    mesh.userData = { isMaterial: true, itemNo: mat.Item_No };
+                    threeScene.add(mesh);
+
+                    if (index < materials.length - 1) {
+                        const jointGeo = new THREE.SphereGeometry(0.6, 32, 32);
+                        const jointMesh = new THREE.Mesh(jointGeo, jointMaterial);
+                        jointMesh.position.x = offsetX + (isPipe ? 1.5 : 0.25) + 0.5; // mid point rough approx
+                        jointMesh.userData = { isJoint: true, compA: mat.Item_No, compB: materials[index+1].Item_No, spool: spool };
+                        threeScene.add(jointMesh);
+                        objects.push(jointMesh);
+                        offsetX += (isPipe ? 3 : 0.5) + 1;
+                    }
+                });
+
+                threeCamera.position.z = 8;
+                threeCamera.position.y = 2;
+                threeCamera.lookAt(0, 0, 0);
+
+                let isDragging = false;
+                let previousMousePosition = { x: 0, y: 0 };
+
+                container.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                });
+                container.addEventListener('mousemove', (e) => {
+                    if (isDragging) {
+                        const deltaMove = { x: e.offsetX - previousMousePosition.x, y: e.offsetY - previousMousePosition.y };
+                        threeScene.rotation.y += deltaMove.x * 0.01;
+                        threeScene.rotation.x += deltaMove.y * 0.01;
+                    }
+                    previousMousePosition = { x: e.offsetX, y: e.offsetY };
+                });
+                container.addEventListener('mouseup', () => { isDragging = false; });
+                container.addEventListener('wheel', (e) => {
+                    threeCamera.position.z += e.deltaY * 0.01;
+                });
+
+                // Raycaster for Joint clicks
+                const raycaster = new THREE.Raycaster();
+                const mouse = new THREE.Vector2();
+
+                container.addEventListener('click', (e) => {
+                    if(isDragging) return; // prevent click if it was a drag
+                    const rect = threeRenderer.domElement.getBoundingClientRect();
+                    mouse.x = ( ( e.clientX - rect.left ) / ( rect.right - rect.left ) ) * 2 - 1;
+                    mouse.y = - ( ( e.clientY - rect.top ) / ( rect.bottom - rect.top) ) * 2 + 1;
+
+                    raycaster.setFromCamera(mouse, threeCamera);
+                    const intersects = raycaster.intersectObjects(objects);
+
+                    if (intersects.length > 0) {
+                        const jointData = intersects[0].object.userData;
+                        if (jointData.isJoint) {
+                            closeTwinModal();
+                            openJointModal(jointData.spool, jointData.compA, jointData.compB);
+                        }
+                    }
+                });
+
+                const animate = function () {
+                    animationFrameId = requestAnimationFrame(animate);
+                    threeRenderer.render(threeScene, threeCamera);
+                };
+                animate();
+            };
 
             return {
                 loading, isOnline, activeModule, sidebarOpen, toasts, modal,
@@ -1212,7 +1483,9 @@
                 processAllocation, isSpoolFrozen, getAllocatedMaterials, getMissingStockForSpool, getJointsForSpool, processCreateJoint,
                 processMovement, kioskStartSpool, kioskFinishJoint, processDeallocate, processDeleteSpool, getHeatNumbersForSpool, revisionAlerts,
                 splitRatio, dashboardSplitRatio, startDrag, startDashDrag, jointModal, openJointModal, closeJointModal,
-                resetDashboardFilters, selectedDetailSpool, detailForm, selectDetailSpool, closeDetailPanel, updateDetailSpool
+                resetDashboardFilters, selectedDetailSpool, detailForm, selectDetailSpool, closeDetailPanel, updateDetailSpool,
+                dragModal, dragOverSpool, bulkAllocTarget, onDragStart, onDragOver, onDragLeave, onDrop, processDragAllocation, processBulkAllocation,
+                twinModal, openTwinModal, closeTwinModal
             };
         }
     }).mount('#app');

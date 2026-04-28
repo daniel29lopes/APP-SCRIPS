@@ -100,6 +100,7 @@ function deallocateMaterial(tagSpool, itemNo, qty) {
       break;
     }
   }
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -134,6 +135,40 @@ function allocateMaterial(tagIso, itemNo, tagSpool, qty, destination) {
   sheet.appendRow(newRow);
 
   logAction("Alocação Material", tagSpool, `Item ${itemNo} alocado ${qty} para ${destination} (ISO: ${tagIso})`);
+  SpreadsheetApp.flush();
+  return getInitialData();
+}
+
+function bulkAllocateMaterials(allocations) {
+  const ss = getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('DB_3_BOM_Engenharia');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+
+  const hIso = headers.indexOf('Tag_ISO');
+  const hItem = headers.indexOf('Item_No');
+  const hSpool = headers.indexOf('Tag_Spool');
+
+  allocations.forEach(alloc => {
+    let originalRow = null;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][hIso] == alloc.tagIso && data[i][hItem] == alloc.itemNo && (!data[i][hSpool] || data[i][hSpool] === '')) {
+        originalRow = data[i];
+        break;
+      }
+    }
+
+    if (originalRow) {
+      let newRow = [...originalRow];
+      newRow[hSpool] = alloc.tagSpool;
+      newRow[headers.indexOf('Qtd_Alocada')] = alloc.qty;
+      newRow[headers.indexOf('Destino')] = alloc.destination;
+      sheet.appendRow(newRow);
+      logAction("Alocação Bulk", alloc.tagSpool, `Item ${alloc.itemNo} alocado ${alloc.qty} para ${alloc.destination}`);
+    }
+  });
+
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -152,6 +187,7 @@ function createJoint(jointData) {
 
   sheet.appendRow(newRow);
   logAction("Criada Junta", jointData.Tag_Spool, `Junta ${jointData.ID_Junta} criada com sucesso.`);
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -180,6 +216,7 @@ function deleteSpool(tagSpool) {
     }
   }
 
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -201,6 +238,7 @@ function updateSpoolsStatus(spoolTags, newStatus) {
   }
 
   logAction("Mudança de Estado", "Múltiplos Spools", `Estado alterado para ${newStatus} em ${updated} spools.`);
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -222,6 +260,7 @@ function updateSpoolDetails(tagSpool, newStatus, newNotes) {
       break;
     }
   }
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -242,6 +281,7 @@ function finishJointKiosk(jointId, tagSpool) {
       break;
     }
   }
+  SpreadsheetApp.flush();
   return getInitialData();
 }
 
@@ -271,5 +311,6 @@ function addInventoryMovement(movementData) {
 
   sheet.appendRow(newRow);
   logAction("Movimento Estoque", movementData.Codigo_SAP, `${movementData.Tipo_Movimento} - Qtd: ${movementData.Quantidade}`);
+  SpreadsheetApp.flush();
   return getInitialData();
 }
